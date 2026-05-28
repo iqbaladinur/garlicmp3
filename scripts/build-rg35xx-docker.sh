@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-TOOLCHAIN_DIR="$(dirname "$0")/../ref/rg35xx-toolchain"
+TOOLCHAIN_DIR="$(dirname "$0")/../toolchain"
 IMAGE="aveferrum/rg35xx-toolchain"
 
 # Build the image if not already built

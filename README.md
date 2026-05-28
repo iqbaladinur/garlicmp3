@@ -1,103 +1,30 @@
 # Garlic MP3 Player
 
-Minimal MP3 player skeleton for the original Anbernic RG35XX / RG35XX OG running GarlicOS 1.4.9.
+Minimal MP3 player for the original Anbernic RG35XX / RG35XX OG running GarlicOS 1.4.9.
 
-This first version is intentionally small:
+- Standalone GarlicOS APPS launcher.
+- SDL 1.2 UI and joystick input, patched specifically for RG35XX hardware.
+- MP3 playback through a bundled static `mpg123` subprocess.
+- Music scan from `Roms/MUSIC` (SD2), `Roms/APPS/GarlicMP3/MUSIC`, or `/mnt/mmc/MUSIC`.
+- No GarlicOS 2, MuOS, Knulli, RG35XX Plus/H/2024, or H700 assumptions.
 
-- Standalone GarlicOS APPS folder app.
-- SDL 1.2 UI and input.
-- MP3 playback through a command-line `mpg123` subprocess.
-- Music scan from `/mnt/mmc/MUSIC`, `./MUSIC`, and the app-local `MUSIC` folder.
-- For GarlicOS 2-SD setup, `Roms/MUSIC` beside `Roms/APPS` is scanned first.
-- No GarlicOS 2, MuOS, Knulli, RG35XX Plus/H/2024, or H700 target assumptions.
+## Build (recommended)
 
-## Build
-
-You need an ARM Linux GCC toolchain and SDL 1.2 headers/libs for the target environment.
-
-Default cross build:
+Requires Docker.
 
 ```sh
-make
+make docker-rg35xx-dist
 ```
 
-The default compiler prefix is:
+This uses `toolchain/` — a custom Docker image based on `nfriedly/miyoo-toolchain:steward`
+with SDL 1.2.15 recompiled from source with RG35XX-specific patches:
 
-```text
-arm-linux-gnueabihf-
-```
+- Removes `TIOCNOTTY` call in fbcon keyboard driver (fixes input on GarlicOS).
+- Fixes joystick detection for hat-only devices (RG35XX D-pad).
+- Adds vsync and triple-buffer support for the Actions SoC framebuffer.
 
-Override it if your toolchain uses a different prefix:
-
-```sh
-make CROSS_COMPILE=arm-linux-
-```
-
-Build with an explicit sysroot:
-
-```sh
-make SYSROOT=/path/to/rg35xx/sysroot SDL_CFLAGS="-I/path/to/sysroot/usr/include/SDL" SDL_LIBS="-L/path/to/sysroot/usr/lib -lSDL"
-```
-
-Host syntax build, useful only for development on a Linux desktop with SDL 1.2 installed:
-
-```sh
-make CROSS_COMPILE= SDL_CFLAGS="$(sdl-config --cflags)" SDL_LIBS="$(sdl-config --libs)"
-```
-
-## Build Using `garlic.img`
-
-If `garlic.img` is available in this repository root, the Makefile can extract the runtime libraries needed from the GarlicOS `SYSTEM.img` partition:
-
-```sh
-make extract-garlic-sysroot
-make garlic-img-build
-make garlic-img-dist
-```
-
-This creates an ignored local folder:
-
-```text
-garlic-sysroot/
-```
-
-The GarlicOS image includes runtime `libSDL-1.2.so.0.11.4`, but not SDL development headers. This repo therefore includes a small compatibility header in `third_party/sdl12-min/SDL/SDL.h` for the subset of SDL 1.2 used by this app.
-
-The generated binary uses the GarlicOS glibc loader:
-
-```text
-/usr/local/lib/ld-linux-armhf.so.3
-```
-
-## Build Using Miyoo Toolchain Docker
-
-For GarlicOS/RG35XX community builds, `nfriedly/miyoo-toolchain` is commonly used. This avoids linking against a modern host glibc.
-
-Run with Docker Desktop or a running Docker daemon:
-
-```sh
-make docker-miyoo-dist
-```
-
-The script uses:
-
-```text
-nfriedly/miyoo-toolchain:latest
-```
-
-Override the image if needed:
-
-```sh
-MIYOO_IMAGE=nfriedly/miyoo-toolchain:steward make docker-miyoo-dist
-```
-
-Use `latest` first. Try `steward` only if the resulting binary still fails on device.
-
-Create the APPS package:
-
-```sh
-make dist
-```
+The toolchain image is built automatically on first run from `toolchain/Dockerfile`.
+Subsequent runs skip the build step.
 
 Output:
 
@@ -106,76 +33,80 @@ dist/APPS/
   GarlicMP3.sh
   GarlicMP3/
     garlic-mp3-player
+    mpg123
     MUSIC/
     README.txt
 ```
 
-## Install To SD Card
+## Install
 
-Copy the generated folder to the APPS directory on the ROMS partition:
+Copy `dist/APPS/` contents to the ROMS partition:
 
 ```text
-/Roms/APPS/GarlicMP3.sh
-/Roms/APPS/GarlicMP3/garlic-mp3-player
-/Roms/APPS/GarlicMP3/MUSIC/
+SD2:/Roms/APPS/GarlicMP3.sh
+SD2:/Roms/APPS/GarlicMP3/garlic-mp3-player
+SD2:/Roms/APPS/GarlicMP3/mpg123
+SD2:/Roms/APPS/GarlicMP3/MUSIC/
 ```
 
-Put MP3 files in either:
+Put MP3 files in any of:
 
 ```text
-/Roms/MUSIC
-/mnt/mmc/MUSIC
-/Roms/APPS/GarlicMP3/MUSIC
+SD2:/Roms/MUSIC/
+SD2:/Roms/APPS/GarlicMP3/MUSIC/
+SD1:/mnt/mmc/MUSIC/
 ```
 
 The app scans one subdirectory level below those folders.
 
 ## Controls
 
-Keyboard fallback:
+| Button | Action |
+|--------|--------|
+| D-pad Up/Down | Select track |
+| A | Play selected |
+| B | Stop |
+| START | Pause / Resume |
+| L / R | Previous / Next track |
+| X / Y | Volume down / up |
+| SELECT + START | Quit |
+| MENU | Quit |
 
-- Up/Down: select track
-- Enter/Space: play selected
-- Escape/Backspace: stop
-- P: pause/resume
-- Left/Right: previous/next
-- Minus/Equals: volume down/up
-- Q: quit
+## Troubleshooting
 
-RG35XX SDL joystick defaults:
+- **App does not appear in launcher**: verify `GarlicMP3.sh` is directly under `Roms/APPS/` and is executable.
+- **App launches then returns immediately**: check `Roms/APPS/GarlicMP3/garlic-mp3.log`.
+- **UI opens but no sound**: verify `mpg123` exists in the app folder and is executable.
+- **No MP3 files shown**: only `.mp3` files are scanned; check music folder paths above.
+- **Volume does not change**: ALSA mixer control names may differ; check `garlic-mp3.log` for `amixer` output.
+- **Controls wrong**: press the button and check `garlic-mp3.log` for `JOY unknown btn=X`, then update `src/input.c`.
 
-- D-pad up/down: select track
-- A: play selected
-- B: stop
-- Start: pause/resume
-- L/R: previous/next
-- X/Y: volume down/up
-- Select+Start or Menu: quit
+## Alternative Build: Miyoo Toolchain (legacy)
 
-Debug build note: current builds auto-quit after about 60 seconds so failed input tests do not require a forced reboot.
-
-Button IDs can vary by SDL/device build. Unknown joystick buttons are written to `garlic-mp3.log`.
-
-## Runtime Dependencies
-
-The player expects `mpg123` to be available in `PATH` on GarlicOS. The stock `SYSTEM.img` inspected for this skeleton did not include `mpg123` or `amixer`. If GarlicOS does not provide them on your SD card, copy compatible ARM binaries into the app folder. The launcher already prepends the app folder to `PATH`:
+Produces a fully static binary. Input does not work reliably due to SDL not being
+patched for RG35XX. Kept for reference only.
 
 ```sh
-export PATH="$PWD:$PATH"
+make docker-miyoo-dist
 ```
 
-Volume uses `amixer` and tries both `Master` and `PCM`. If neither control exists, playback should continue but volume buttons may do nothing.
+## Alternative Build: garlic.img sysroot
 
-## Troubleshooting GarlicOS 1.4.9
+If `garlic.img` is present in the repo root, the GarlicOS SDL can be extracted and
+linked against directly:
 
-- App does not appear: verify the folder is under `/Roms/APPS/` and `GarlicMP3.sh` is executable.
-- App launches then returns immediately: inspect `/Roms/APPS/GarlicMP3/garlic-mp3.log`.
-- UI opens but no sound: check that `mpg123` exists and can play an MP3 on the device.
-- MP3 files are missing: use `/mnt/mmc/MUSIC` or the app-local `MUSIC` folder; only `.mp3` files are shown.
-- Controls mismatch: press the button and inspect `garlic-mp3.log` for unknown joystick button IDs, then edit `src/input.c`.
-- Volume does not change: ALSA mixer control names may differ on GarlicOS; test with `amixer`.
-- Screen issues: the app requests a plain `640x480` SDL 1.2 software surface.
+```sh
+make extract-garlic-sysroot
+make garlic-img-dist
+```
 
-## Notes
+Requires `7z` and `arm-linux-gnueabihf-gcc`. The resulting binary needs glibc ≤ 2.32
+on the device (matches Drastic's bundled `libc.so.6`).
 
-This is a first-run skeleton. It avoids ID3 metadata, album art, playlists, config files, software mixing, and `libmpg123` linking until the app is confirmed working on RG35XX OG GarlicOS 1.4.9.
+## Log File
+
+Runtime log is written to:
+
+```text
+Roms/APPS/GarlicMP3/garlic-mp3.log
+```
