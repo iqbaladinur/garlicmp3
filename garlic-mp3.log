@@ -1,0 +1,25 @@
+=== GarlicMP3 launch ===
+Wed May 27 09:26:22 UTC 2026
+pwd: /mnt/SDCARD/Roms/APPS/GarlicMP3
+uname: Linux localhost 3.10.37 #116 SMP PREEMPT Thu Apr 6 20:31:58 CEST 2023 armv7l GNU/Linux
+PATH before: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/sbin:/vendor/bin:/mnt/sdcard/bin:/system/bin:/system/usr/bin
+LD_LIBRARY_PATH before: /mnt/sdcard/lib:/vendor/lib:/system/lib:/system/usr/lib
+files:
+total 256
+drwx------    4 root     root         32768 May 27 09:26 .
+drwx------    9 root     root         32768 Apr  8  2023 ..
+-rwx------    1 root     root           180 May 28  2026 .directfbrc
+drwx------    2 root     root         32768 May 28  2026 MUSIC
+-rwx------    1 root     root          4194 May 28  2026 README.txt
+-rwx------    1 root     root         19504 May 28  2026 garlic-mp3-player
+-rwx------    1 root     root           408 May 27 09:26 garlic-mp3.log
+drwx------    4 root     root         32768 May 28  2026 libs
+PATH after: /mnt/SDCARD/Roms/APPS/GarlicMP3:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/sbin:/vendor/bin:/mnt/sdcard/bin:/system/bin:/system/usr/bin
+LD_LIBRARY_PATH after: /mnt/SDCARD/Roms/APPS/GarlicMP3/libs:/mnt/SDCARD/Roms/APPS/GarlicMP3:/lib:/usr/lib:/usr/local/lib:/usr/local/lib/arm-linux-gnueabihf:/mnt/sdcard/lib:/vendor/lib:/system/lib:/system/usr/lib
+binary:
+-rwx------    1 root     root         19504 May 28  2026 ./garlic-mp3-player
+start binary
+./garlic-mp3-player: /mnt/SDCARD/Roms/APPS/GarlicMP3/libs/libc.so.6: version `GLIBC_2.33' not found (required by ./garlic-mp3-player)
+./garlic-mp3-player: /mnt/SDCARD/Roms/APPS/GarlicMP3/libs/libc.so.6: version `GLIBC_2.34' not found (required by ./garlic-mp3-player)
+binary exit: 1
+=== GarlicMP3 end ===

@@ -1,0 +1,5 @@
+garlic.img
+garlic-sysroot/
+build/
+dist/
+ref/
