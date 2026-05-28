@@ -38,15 +38,17 @@ docker run --rm \
         SDL_CFLAGS="$($SDL_CONFIG --cflags)" \
         SDL_LIBS="$($SDL_CONFIG --libs)"
 
-    if [ -x /opt/miyoo/arm-miyoo-linux-uclibcgnueabi/sysroot/usr/bin/mpg123 ]; then
-        cp /opt/miyoo/arm-miyoo-linux-uclibcgnueabi/sysroot/usr/bin/mpg123 dist/APPS/GarlicMP3/mpg123
-        chmod +x dist/APPS/GarlicMP3/mpg123
-    elif [ -x /opt/miyoo/arm-buildroot-linux-musleabi/sysroot/usr/bin/mpg123 ]; then
-        cp /opt/miyoo/arm-buildroot-linux-musleabi/sysroot/usr/bin/mpg123 dist/APPS/GarlicMP3/mpg123
-        chmod +x dist/APPS/GarlicMP3/mpg123
-    fi
-
+    file dist/APPS/GarlicMP3/garlic-mp3-player || true
     echo "Built with: $CC_BIN"
     echo "SDL config: $SDL_CONFIG"
-    file dist/APPS/GarlicMP3/garlic-mp3-player || true
   '
+
+# Get static mpg123 from Miyoo toolchain (dynamically linked mpg123 won't work on device)
+echo "Copying static mpg123 from Miyoo toolchain..."
+docker run --rm \
+  -v "$PWD/dist/APPS/GarlicMP3:/out" \
+  "nfriedly/miyoo-toolchain:latest" \
+  sh -lc 'cp /opt/miyoo/arm-buildroot-linux-musleabi/sysroot/usr/bin/mpg123 /out/mpg123 && chmod +x /out/mpg123'
+
+echo "Done."
+find dist/APPS -type f -printf '%p %s bytes\n'

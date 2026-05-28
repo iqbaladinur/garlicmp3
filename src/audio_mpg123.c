@@ -79,11 +79,16 @@ int audio_play(const char *path)
 
     usleep(100000);
     reap_player(0);
-    if (state == AUDIO_STOPPED) {
+    if (player_pid <= 0) {
+        /* mpg123 exited within 100ms — failed to start */
+        printf("audio_play: mpg123 exited immediately\n");
+        fflush(stdout);
         return -1;
     }
 
     state = AUDIO_PLAYING;
+    printf("audio_play: playing pid=%d\n", (int)player_pid);
+    fflush(stdout);
     return 0;
 }
 
@@ -106,12 +111,15 @@ void audio_pause_toggle(void)
 
 static void run_amixer(const char *control, const char *delta)
 {
-    char command[128];
+    char command[256];
     int rc;
 
-    snprintf(command, sizeof(command), "amixer set %s %s >/dev/null 2>&1", control, delta);
+    snprintf(command, sizeof(command), "amixer set '%s' %s 2>&1", control, delta);
+    printf("amixer: %s\n", command);
+    fflush(stdout);
     rc = system(command);
-    (void)rc;
+    printf("amixer rc=%d\n", rc);
+    fflush(stdout);
 }
 
 void audio_volume_down(void)

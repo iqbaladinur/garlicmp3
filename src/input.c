@@ -73,6 +73,9 @@ static InputAction button_action(int button, int pressed)
     case SDL_BTN_R:      return ACTION_NEXT;
     case SDL_BTN_START:  return ACTION_PAUSE;
     case SDL_BTN_MENU:   return ACTION_QUIT;
+    case 6:              return ACTION_VOL_DOWN; /* L2 */
+    case 7:              return ACTION_VOL_UP;   /* R2 */
+    case 11:             return ACTION_VOL_DOWN; /* hw vol- */
     default:
         printf("JOY unknown btn=%d\n", button);
         fflush(stdout);
