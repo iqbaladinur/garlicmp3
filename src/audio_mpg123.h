@@ -8,6 +8,7 @@ typedef enum AudioState {
 } AudioState;
 
 int audio_play(const char *path);
+int audio_play_from_seconds(const char *path, int seconds);
 void audio_stop(void);
 void audio_pause_toggle(void);
 void audio_volume_down(void);

@@ -106,13 +106,24 @@ void audio_stop(void)
     stopping = 0;
 }
 
-int audio_play(const char *path)
+static int audio_play_internal(const char *path, int start_seconds)
 {
+    char skip_arg[32];
+    int skip_frames = 0;
+
     if (!path || !path[0]) {
         return -1;
     }
 
     audio_stop();
+    if (start_seconds < 0) {
+        start_seconds = 0;
+    }
+    if (start_seconds > 1) {
+        /* mpg123 -k skips MPEG audio frames; 38 fps is a practical MP3 approximation. */
+        skip_frames = start_seconds * 38;
+        snprintf(skip_arg, sizeof(skip_arg), "%d", skip_frames);
+    }
 
     player_pid = fork();
     if (player_pid < 0) {
@@ -123,7 +134,11 @@ int audio_play(const char *path)
     }
 
     if (player_pid == 0) {
-        execlp("mpg123", "mpg123", "-q", path, (char *)0);
+        if (skip_frames > 0) {
+            execlp("mpg123", "mpg123", "-q", "-k", skip_arg, path, (char *)0);
+        } else {
+            execlp("mpg123", "mpg123", "-q", path, (char *)0);
+        }
         perror("mpg123");
         _exit(127);
     }
@@ -138,12 +153,30 @@ int audio_play(const char *path)
     }
 
     state = AUDIO_PLAYING;
-    play_started_at = time(NULL);
+    play_started_at = time(NULL) - start_seconds;
     pause_started_at = 0;
     paused_seconds = 0;
-    printf("audio_play: playing pid=%d\n", (int)player_pid);
+    printf("audio_play: playing pid=%d start=%d\n", (int)player_pid, start_seconds);
     fflush(stdout);
     return 0;
+}
+
+int audio_play(const char *path)
+{
+    return audio_play_internal(path, 0);
+}
+
+int audio_play_from_seconds(const char *path, int seconds)
+{
+    int rc;
+
+    rc = audio_play_internal(path, seconds);
+    if (rc != 0 && seconds > 0) {
+        printf("audio_play: resume failed, retry from start\n");
+        fflush(stdout);
+        rc = audio_play_internal(path, 0);
+    }
+    return rc;
 }
 
 void audio_pause_toggle(void)

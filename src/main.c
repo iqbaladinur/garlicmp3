@@ -11,7 +11,10 @@
 
 typedef struct AppState {
     char path[TRACK_PATH_MAX];
+    char playing_path[TRACK_PATH_MAX];
     int volume;
+    int resume_play;
+    int elapsed_seconds;
 } AppState;
 
 static void state_file_path(char *out, size_t out_size, const char *argv0)
@@ -64,6 +67,12 @@ static void load_state(const char *path, AppState *state)
         trim_line(line);
         if (strncmp(line, "selected_path=", 14) == 0) {
             snprintf(state->path, sizeof(state->path), "%s", line + 14);
+        } else if (strncmp(line, "playing_path=", 13) == 0) {
+            snprintf(state->playing_path, sizeof(state->playing_path), "%s", line + 13);
+        } else if (strncmp(line, "resume_play=", 12) == 0) {
+            state->resume_play = atoi(line + 12);
+        } else if (strncmp(line, "elapsed=", 8) == 0) {
+            state->elapsed_seconds = atoi(line + 8);
         } else if (strncmp(line, "volume=", 7) == 0) {
             state->volume = atoi(line + 7);
         }
@@ -72,9 +81,10 @@ static void load_state(const char *path, AppState *state)
     fclose(fp);
 }
 
-static void save_state(const char *path, const TrackList *list, int selected)
+static void save_state(const char *path, const TrackList *list, int selected, int playing)
 {
     FILE *fp;
+    AudioState state_now;
 
     fp = fopen(path, "w");
     if (!fp) {
@@ -84,6 +94,15 @@ static void save_state(const char *path, const TrackList *list, int selected)
 
     if (list->count > 0 && selected >= 0 && selected < list->count) {
         fprintf(fp, "selected_path=%s\n", list->tracks[selected].path);
+    }
+    state_now = audio_state();
+    if (list->count > 0 && playing >= 0 && playing < list->count && state_now != AUDIO_STOPPED) {
+        fprintf(fp, "playing_path=%s\n", list->tracks[playing].path);
+        fprintf(fp, "resume_play=1\n");
+        fprintf(fp, "elapsed=%d\n", audio_elapsed_seconds());
+    } else {
+        fprintf(fp, "resume_play=0\n");
+        fprintf(fp, "elapsed=0\n");
     }
     fprintf(fp, "volume=%d\n", audio_get_volume());
     fclose(fp);
@@ -120,6 +139,22 @@ static int play_selected(const TrackList *list, int selected, char *message, siz
         snprintf(message, message_size, "Failed to start mpg123");
         return -1;
     }
+}
+
+static int resume_selected(const TrackList *list, int selected, int elapsed_seconds, char *message, size_t message_size)
+{
+    if (list->count <= 0 || selected < 0 || selected >= list->count) {
+        snprintf(message, message_size, "No track selected");
+        return -1;
+    }
+
+    if (audio_play_from_seconds(list->tracks[selected].path, elapsed_seconds) == 0) {
+        snprintf(message, message_size, "Resumed: %s", list->tracks[selected].name);
+        return selected;
+    }
+
+    snprintf(message, message_size, "Failed to resume mpg123");
+    return -1;
 }
 
 static int random_track_index(const TrackList *list, int current)
@@ -229,6 +264,10 @@ static int handle_action(InputAction action, const TrackList *list, int *selecte
         save_needed = 1;
         break;
     case ACTION_QUIT:
+        if (audio_state() == AUDIO_PLAYING) {
+            audio_pause_toggle();
+            snprintf(message, message_size, "Paused for resume");
+        }
         *running = 0;
         save_needed = 1;
         break;
@@ -288,10 +327,17 @@ int main(int argc, char **argv)
         if (restored >= 0) {
             selected = restored;
         }
+        if (saved_state.resume_play) {
+            int resume_track = find_track_by_path(&list, saved_state.playing_path);
+            if (resume_track >= 0) {
+                selected = resume_track;
+                playing = resume_selected(&list, selected, saved_state.elapsed_seconds, message, sizeof(message));
+            }
+        }
     }
     if (list.count == 0) {
         snprintf(message, sizeof(message), "No MP3 files found");
-    } else {
+    } else if (playing < 0) {
         snprintf(message, sizeof(message), "%d tracks found", list.count);
     }
 
@@ -304,7 +350,7 @@ int main(int argc, char **argv)
         {
             InputAction action = input_poll_joystick();
             if (handle_action(action, &list, &selected, &playing, &running, message, sizeof(message))) {
-                save_state(state_path, &list, selected);
+                save_state(state_path, &list, selected, playing);
             }
         }
 
@@ -312,7 +358,7 @@ int main(int argc, char **argv)
         while (SDL_PollEvent(&event)) {
             InputAction action = input_event_to_action(&event);
             if (handle_action(action, &list, &selected, &playing, &running, message, sizeof(message))) {
-                save_state(state_path, &list, selected);
+                save_state(state_path, &list, selected, playing);
             }
         }
 
@@ -320,7 +366,7 @@ int main(int argc, char **argv)
             selected = playing + 1;
             clamp_selected(&list, &selected);
             playing = play_selected(&list, selected, message, sizeof(message));
-            save_state(state_path, &list, selected);
+            save_state(state_path, &list, selected, playing);
         }
 
         if (audio_state() == AUDIO_STOPPED) {
@@ -341,8 +387,8 @@ int main(int argc, char **argv)
         SDL_Delay(33);
     }
 
+    save_state(state_path, &list, selected, playing);
     audio_stop();
-    save_state(state_path, &list, selected);
     ui_shutdown();
     input_shutdown();
     SDL_Quit();

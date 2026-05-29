@@ -510,9 +510,9 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
     fill_round_rect(38, 366, 556, 66, 13, border);
     fill_round_rect(40, 368, 552, 62, 11, info_bg);
     if (message && message[0]) {
-        draw_text(54, 385, message, hi, 58);
+        draw_marquee_text(54, 385, message, hi, 47, 1);
     } else if (list->truncated) {
-        draw_text(54, 385, "Track list truncated at 512 files", hi, 58);
+        draw_marquee_text(54, 385, "Track list truncated at 512 files", hi, 47, 1);
     } else {
         draw_text(54, 385, "Ready", hi, 10);
     }
