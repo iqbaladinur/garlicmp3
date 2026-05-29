@@ -369,6 +369,26 @@ static void draw_volume_bar(int x, int y, int w, int h, int volume, Uint32 fg, U
     }
 }
 
+static void draw_progress_bar(int x, int y, int w, int h, int elapsed, int duration, Uint32 muted, Uint32 hi)
+{
+    int fill_w = 0;
+
+    if (elapsed < 0) {
+        elapsed = 0;
+    }
+    if (duration > 0) {
+        if (elapsed > duration) {
+            elapsed = duration;
+        }
+        fill_w = (w * elapsed) / duration;
+    }
+
+    fill_round_rect(x, y, w, h, 3, muted);
+    if (fill_w > 0) {
+        fill_round_rect(x, y, fill_w, h, 3, hi);
+    }
+}
+
 static const char *state_label(AudioState state)
 {
     switch (state) {
@@ -476,7 +496,7 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
         draw_text(454, 260, "Now Playing", hi, 14);
         draw_text(454, 280, state_label(state), fg, 12);
         if (playing >= 0 && playing < list->count) {
-            now_title = list->tracks[playing].name;
+            now_title = list->tracks[playing].display_name;
         } else {
             now_title = "No active track";
         }
@@ -486,6 +506,7 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
             int duration = playing >= 0 && playing < list->count ? list->tracks[playing].duration_seconds : 0;
             format_time_pair(elapsed_seconds, duration, time_label, sizeof(time_label));
             draw_text(454, 324, time_label, fg, 16);
+            draw_progress_bar(454, 340, 120, 4, elapsed_seconds, duration, rgb(60, 70, 80), hi_text);
         }
 
         for (i = 0; i < visible && first + i < list->count; i++) {
@@ -497,7 +518,7 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
                 fill_round_rect(50, y - 5, 356, 18, 7, hi);
             }
 
-            snprintf(line, sizeof(line), "%03d %s", idx + 1, list->tracks[idx].name);
+            snprintf(line, sizeof(line), "%03d %s", idx + 1, list->tracks[idx].display_name);
             if (idx == selected) {
                 draw_marquee_text(62, y, line, hi_text, 41, 1);
             } else {

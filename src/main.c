@@ -133,7 +133,7 @@ static int play_selected(const TrackList *list, int selected, char *message, siz
     }
 
     if (audio_play(list->tracks[selected].path) == 0) {
-        snprintf(message, message_size, "Playing: %s", list->tracks[selected].name);
+        snprintf(message, message_size, "Playing: %s", list->tracks[selected].display_name);
         return selected;
     } else {
         snprintf(message, message_size, "Failed to start mpg123");
@@ -149,7 +149,7 @@ static int resume_selected(const TrackList *list, int selected, int elapsed_seco
     }
 
     if (audio_play_from_seconds(list->tracks[selected].path, elapsed_seconds) == 0) {
-        snprintf(message, message_size, "Resumed: %s", list->tracks[selected].name);
+        snprintf(message, message_size, "Resumed: %s", list->tracks[selected].display_name);
         return selected;
     }
 

@@ -190,6 +190,58 @@ static int estimate_mp3_duration(const char *path)
     return duration > 0 ? duration : 0;
 }
 
+static void clean_display_name(char *out, size_t out_size, const char *name)
+{
+    size_t i;
+    size_t j = 0;
+    size_t len;
+    size_t end;
+    int last_space = 1;
+
+    if (!out || out_size == 0) {
+        return;
+    }
+
+    out[0] = '\0';
+    if (!name) {
+        return;
+    }
+
+    len = strlen(name);
+    end = len;
+    if (len > 4 && strcasecmp(name + len - 4, ".mp3") == 0) {
+        end = len - 4;
+    }
+
+    for (i = 0; i < end && j + 1 < out_size; i++) {
+        unsigned char c = (unsigned char)name[i];
+
+        if (c == '_' || c == '-' || c == '.') {
+            c = ' ';
+        }
+
+        if (isspace(c)) {
+            if (!last_space && j + 1 < out_size) {
+                out[j++] = ' ';
+            }
+            last_space = 1;
+            continue;
+        }
+
+        out[j++] = (char)c;
+        last_space = 0;
+    }
+
+    while (j > 0 && out[j - 1] == ' ') {
+        j--;
+    }
+    out[j] = '\0';
+
+    if (out[0] == '\0') {
+        snprintf(out, out_size, "%s", name);
+    }
+}
+
 static void add_track(TrackList *list, const char *dir, const char *name)
 {
     Track *track;
@@ -209,6 +261,7 @@ static void add_track(TrackList *list, const char *dir, const char *name)
         return;
     }
     snprintf(track->name, sizeof(track->name), "%s", name);
+    clean_display_name(track->display_name, sizeof(track->display_name), name);
     track->duration_seconds = estimate_mp3_duration(track->path);
     list->count++;
 }
