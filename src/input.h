@@ -10,6 +10,7 @@ typedef enum InputAction {
     ACTION_PLAY,
     ACTION_STOP,
     ACTION_PAUSE,
+    ACTION_SHUFFLE_PLAY,
     ACTION_PREV,
     ACTION_NEXT,
     ACTION_VOL_DOWN,

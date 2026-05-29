@@ -15,6 +15,8 @@ enum {
     SDL_BTN_Y      = 3,
     SDL_BTN_L      = 4,
     SDL_BTN_R      = 5,
+    SDL_BTN_L2     = 6,
+    SDL_BTN_R2     = 7,
     SDL_BTN_START  = 8,
     SDL_BTN_SELECT = 9,
     SDL_BTN_VOL_UP = 10,
@@ -68,11 +70,13 @@ static InputAction button_action(int button, int pressed)
     switch (button) {
     case SDL_BTN_A:      return ACTION_PLAY;
     case SDL_BTN_B:      return ACTION_STOP;
-    case SDL_BTN_X:      return ACTION_VOL_UP;
-    case SDL_BTN_Y:      return ACTION_VOL_DOWN;
-    case SDL_BTN_L:      return ACTION_PREV;
-    case SDL_BTN_R:      return ACTION_NEXT;
-    case SDL_BTN_START:  return ACTION_PAUSE;
+    case SDL_BTN_X:
+    case SDL_BTN_Y:      return ACTION_PAUSE;
+    case SDL_BTN_L:
+    case SDL_BTN_L2:     return ACTION_VOL_DOWN;
+    case SDL_BTN_R:
+    case SDL_BTN_R2:     return ACTION_VOL_UP;
+    case SDL_BTN_START:  return ACTION_SHUFFLE_PLAY;
     case SDL_BTN_SELECT: return ACTION_QUIT;
     case SDL_BTN_VOL_UP: return ACTION_VOL_UP;
     case SDL_BTN_VOL_DOWN: return ACTION_VOL_DOWN;

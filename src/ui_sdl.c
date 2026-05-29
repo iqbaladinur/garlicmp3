@@ -7,6 +7,7 @@
 #define SCREEN_H 480
 #define CHAR_W 8
 #define CHAR_H 8
+#define UI_VOLUME_MAX 40
 
 static SDL_Surface *screen = NULL;
 static SDL_Surface *background = NULL;
@@ -193,6 +194,31 @@ static void draw_text(int x, int y, const char *text, Uint32 fg, int max_chars)
     }
 }
 
+static void draw_marquee_text(int x, int y, const char *text, Uint32 fg, int max_chars, int active)
+{
+    int len;
+    int offset = 0;
+    char window[96];
+
+    if (!text || max_chars <= 0) {
+        return;
+    }
+
+    len = (int)strlen(text);
+    if (!active || len <= max_chars) {
+        draw_text(x, y, text, fg, max_chars);
+        return;
+    }
+
+    offset = (int)((SDL_GetTicks() / 220) % (Uint32)(len + 4));
+    if (offset >= len) {
+        offset = 0;
+    }
+
+    snprintf(window, sizeof(window), "%s    %s", text + offset, text);
+    draw_text(x, y, window, fg, max_chars);
+}
+
 static void draw_char_scaled(int x, int y, char c, Uint32 fg, int scale)
 {
     int row;
@@ -271,23 +297,76 @@ static void format_time_pair(int elapsed_seconds, int duration_seconds, char *ou
     snprintf(out, out_size, "%02d:%02d / %02d:%02d", elapsed_minutes, elapsed_seconds, duration_minutes, duration_seconds);
 }
 
-static void draw_album_visual(int x, int y, int size, Uint32 muted)
+static void draw_album_visual(int x, int y, int size, Uint32 muted, int spinning)
 {
+    static const int marker_x[32] = {
+        0, 8, 16, 24, 30, 36, 39, 41,
+        42, 41, 39, 36, 30, 24, 16, 8,
+        0, -8, -16, -24, -30, -36, -39, -41,
+        -42, -41, -39, -36, -30, -24, -16, -8
+    };
+    static const int marker_y[32] = {
+        -42, -41, -39, -36, -30, -24, -16, -8,
+        0, 8, 16, 24, 30, 36, 39, 41,
+        42, 41, 39, 36, 30, 24, 16, 8,
+        0, -8, -16, -24, -30, -36, -39, -41
+    };
+    static int frame = 0;
+    static Uint32 last_tick = 0;
+    Uint32 now = SDL_GetTicks();
+    int cx = x + size / 2;
+    int cy = y + size / 2;
     Uint32 art_bg = rgb(12, 16, 21);
     Uint32 accent = rgb(33, 145, 226);
     Uint32 disc = rgb(229, 236, 241);
     Uint32 ring = rgb(202, 212, 220);
+    Uint32 shine = rgb(246, 249, 251);
 
     (void)muted;
+    if (spinning) {
+        if (last_tick == 0) {
+            last_tick = now;
+        }
+        while (now - last_tick >= 45) {
+            frame = (frame + 1) & 31;
+            last_tick += 45;
+        }
+    } else {
+        last_tick = now;
+    }
+
     fill_round_rect(x, y, size, size, 12, rgb(5, 8, 11));
     fill_round_rect(x + 2, y + 2, size - 4, size - 4, 10, art_bg);
-    fill_circle(x + size / 2 + 3, y + size / 2 + 3, 42, rgb(3, 6, 9));
-    fill_circle(x + size / 2, y + size / 2, 42, disc);
-    fill_circle(x + size / 2, y + size / 2, 31, ring);
-    fill_circle(x + size / 2, y + size / 2, 21, disc);
-    fill_circle(x + size / 2, y + size / 2, 12, art_bg);
-    fill_circle(x + size / 2, y + size / 2, 5, accent);
-    fill_circle(x + size / 2 - 14, y + size / 2 - 15, 7, rgb(246, 249, 251));
+    fill_circle(cx + 3, cy + 3, 42, rgb(3, 6, 9));
+    fill_circle(cx, cy, 42, disc);
+    fill_circle(cx, cy, 31, ring);
+    fill_circle(cx, cy, 21, disc);
+    fill_circle(cx, cy, 12, art_bg);
+    fill_circle(cx, cy, 5, accent);
+    fill_circle(cx + marker_x[frame] / 2, cy + marker_y[frame] / 2, 6, shine);
+    fill_circle(cx + marker_x[frame], cy + marker_y[frame], 4, art_bg);
+    fill_circle(cx + marker_x[frame], cy + marker_y[frame], 2, accent);
+}
+
+static void draw_volume_bar(int x, int y, int w, int h, int volume, Uint32 fg, Uint32 muted, Uint32 hi)
+{
+    char label[16];
+    int fill_w;
+
+    if (volume < 0) {
+        volume = 0;
+    }
+    if (volume > UI_VOLUME_MAX) {
+        volume = UI_VOLUME_MAX;
+    }
+
+    snprintf(label, sizeof(label), "VOL %02d", volume);
+    draw_text(x, y, label, fg, 8);
+    fill_round_rect(x, y + 18, w, h, 4, muted);
+    fill_w = (w * volume) / UI_VOLUME_MAX;
+    if (fill_w > 0) {
+        fill_round_rect(x, y + 18, fill_w, h, 4, hi);
+    }
 }
 
 static const char *state_label(AudioState state)
@@ -327,7 +406,7 @@ void ui_shutdown(void)
     screen = NULL;
 }
 
-void ui_render(const TrackList *list, int selected, int playing, AudioState state, int elapsed_seconds, const char *message)
+void ui_render(const TrackList *list, int selected, int playing, AudioState state, int elapsed_seconds, int volume, const char *message)
 {
     int i;
     int first = 0;
@@ -393,7 +472,7 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
         fill_round_rect(439, 108, 159, 252, 14, panel_shadow);
         fill_round_rect(435, 104, 159, 252, 14, border);
         fill_round_rect(437, 106, 155, 248, 12, rgb(26, 32, 39));
-        draw_album_visual(454, 122, 120, muted);
+        draw_album_visual(454, 122, 120, muted, state == AUDIO_PLAYING);
         draw_text(454, 260, "Now Playing", hi, 14);
         draw_text(454, 280, state_label(state), fg, 12);
         if (playing >= 0 && playing < list->count) {
@@ -401,7 +480,7 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
         } else {
             now_title = "No active track";
         }
-        draw_text(454, 300, now_title, muted, 16);
+        draw_marquee_text(454, 300, now_title, muted, 16, state == AUDIO_PLAYING || state == AUDIO_PAUSED);
         {
             char time_label[32];
             int duration = playing >= 0 && playing < list->count ? list->tracks[playing].duration_seconds : 0;
@@ -419,7 +498,11 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
             }
 
             snprintf(line, sizeof(line), "%03d %s", idx + 1, list->tracks[idx].name);
-            draw_text(62, y, line, idx == selected ? hi_text : fg, 41);
+            if (idx == selected) {
+                draw_marquee_text(62, y, line, hi_text, 41, 1);
+            } else {
+                draw_text(62, y, line, fg, 41);
+            }
         }
     }
 
@@ -433,7 +516,8 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
     } else {
         draw_text(54, 385, "Ready", hi, 10);
     }
-    draw_text(54, 405, "A Play  B Stop  Start Pause  L/R Prev/Next", muted, 54);
+    draw_text(54, 405, "A Play  B Stop  X/Y Pause  Start Shuffle", muted, 54);
+    draw_volume_bar(468, 385, 92, 8, volume, fg, rgb(60, 70, 80), hi);
     draw_text(38, 440, "Menu to quit", muted, 32);
     SDL_UnlockSurface(screen);
     SDL_Flip(screen);

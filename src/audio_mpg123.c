@@ -17,6 +17,10 @@ static AudioState state = AUDIO_STOPPED;
 static time_t play_started_at = 0;
 static time_t pause_started_at = 0;
 static int paused_seconds = 0;
+static int stopping = 0;
+static int finished = 0;
+
+#define SYS_VOLUME_MAX 40
 
 static void reap_player(int blocking)
 {
@@ -31,6 +35,9 @@ static void reap_player(int blocking)
     pid_t got = waitpid(player_pid, &status, flags);
     if (got == player_pid) {
         player_pid = -1;
+        if (!stopping && state != AUDIO_STOPPED) {
+            finished = 1;
+        }
         state = AUDIO_STOPPED;
         play_started_at = 0;
         pause_started_at = 0;
@@ -67,10 +74,13 @@ void audio_stop(void)
         return;
     }
 
+    stopping = 1;
+    finished = 0;
     kill(player_pid, SIGTERM);
     for (i = 0; i < 20; i++) {
         reap_player(0);
         if (player_pid <= 0) {
+            stopping = 0;
             return;
         }
         usleep(10000);
@@ -80,6 +90,7 @@ void audio_stop(void)
     for (i = 0; i < 20; i++) {
         reap_player(0);
         if (player_pid <= 0) {
+            stopping = 0;
             return;
         }
         usleep(10000);
@@ -92,6 +103,7 @@ void audio_stop(void)
     play_started_at = 0;
     pause_started_at = 0;
     paused_seconds = 0;
+    stopping = 0;
 }
 
 int audio_play(const char *path)
@@ -170,6 +182,16 @@ int audio_elapsed_seconds(void)
     return elapsed > 0 ? elapsed : 0;
 }
 
+int audio_take_finished(void)
+{
+    int was_finished;
+
+    audio_poll();
+    was_finished = finished;
+    finished = 0;
+    return was_finished;
+}
+
 static int read_sys_volume(void)
 {
     FILE *fp = fopen("/sys/class/volume/value", "r");
@@ -194,8 +216,8 @@ static void write_sys_volume(int value)
     if (value < 0) {
         value = 0;
     }
-    if (value > 100) {
-        value = 100;
+    if (value > SYS_VOLUME_MAX) {
+        value = SYS_VOLUME_MAX;
     }
 
     fp = fopen("/sys/class/volume/value", "w");
@@ -218,4 +240,14 @@ void audio_volume_down(void)
 void audio_volume_up(void)
 {
     write_sys_volume(read_sys_volume() + 5);
+}
+
+int audio_get_volume(void)
+{
+    return read_sys_volume();
+}
+
+void audio_set_volume(int value)
+{
+    write_sys_volume(value);
 }
