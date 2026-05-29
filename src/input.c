@@ -5,6 +5,11 @@
 
 static SDL_Joystick *joy = NULL;
 static int hat_latched = 0;
+static InputAction hat_hold_action = ACTION_NONE;
+static Uint32 hat_next_repeat = 0;
+
+#define HAT_REPEAT_DELAY_MS 360
+#define HAT_REPEAT_RATE_MS 95
 
 enum {
     SDL_BTN_A      = 0,
@@ -53,6 +58,27 @@ void input_shutdown(void)
 
 InputAction input_poll_joystick(void)
 {
+    Uint32 now;
+    Uint8 hat;
+
+    if (!joy || hat_hold_action == ACTION_NONE) {
+        return ACTION_NONE;
+    }
+
+    SDL_JoystickUpdate();
+    hat = SDL_JoystickGetHat(joy, 0);
+    if (hat == SDL_HAT_CENTERED || ((hat & (SDL_HAT_UP | SDL_HAT_DOWN)) == 0)) {
+        hat_hold_action = ACTION_NONE;
+        hat_next_repeat = 0;
+        return ACTION_NONE;
+    }
+
+    now = SDL_GetTicks();
+    if (now >= hat_next_repeat) {
+        hat_next_repeat = now + HAT_REPEAT_RATE_MS;
+        return hat_hold_action;
+    }
+
     return ACTION_NONE;
 }
 
@@ -98,13 +124,23 @@ InputAction input_event_to_action(const SDL_Event *event)
 
         if (val == SDL_HAT_CENTERED) {
             hat_latched = 0;
+            hat_hold_action = ACTION_NONE;
+            hat_next_repeat = 0;
             return ACTION_NONE;
         }
         if (hat_latched) return ACTION_NONE;
 
         hat_latched = 1;
-        if (val & SDL_HAT_UP)    return ACTION_UP;
-        if (val & SDL_HAT_DOWN)  return ACTION_DOWN;
+        if (val & SDL_HAT_UP) {
+            hat_hold_action = ACTION_UP;
+            hat_next_repeat = SDL_GetTicks() + HAT_REPEAT_DELAY_MS;
+            return ACTION_UP;
+        }
+        if (val & SDL_HAT_DOWN) {
+            hat_hold_action = ACTION_DOWN;
+            hat_next_repeat = SDL_GetTicks() + HAT_REPEAT_DELAY_MS;
+            return ACTION_DOWN;
+        }
         if (val & SDL_HAT_LEFT)  return ACTION_PREV;
         if (val & SDL_HAT_RIGHT) return ACTION_NEXT;
         return ACTION_NONE;
