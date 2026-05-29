@@ -15,7 +15,14 @@ typedef struct AppState {
     int volume;
     int resume_play;
     int elapsed_seconds;
+    int repeat_mode;
 } AppState;
+
+typedef enum RepeatMode {
+    REPEAT_OFF = 0,
+    REPEAT_ALL = 1,
+    REPEAT_ONE = 2
+} RepeatMode;
 
 static void state_file_path(char *out, size_t out_size, const char *argv0)
 {
@@ -57,6 +64,7 @@ static void load_state(const char *path, AppState *state)
 
     memset(state, 0, sizeof(*state));
     state->volume = -1;
+    state->repeat_mode = REPEAT_ALL;
 
     fp = fopen(path, "r");
     if (!fp) {
@@ -73,6 +81,11 @@ static void load_state(const char *path, AppState *state)
             state->resume_play = atoi(line + 12);
         } else if (strncmp(line, "elapsed=", 8) == 0) {
             state->elapsed_seconds = atoi(line + 8);
+        } else if (strncmp(line, "repeat_mode=", 12) == 0) {
+            state->repeat_mode = atoi(line + 12);
+            if (state->repeat_mode < REPEAT_OFF || state->repeat_mode > REPEAT_ONE) {
+                state->repeat_mode = REPEAT_ALL;
+            }
         } else if (strncmp(line, "volume=", 7) == 0) {
             state->volume = atoi(line + 7);
         }
@@ -81,7 +94,7 @@ static void load_state(const char *path, AppState *state)
     fclose(fp);
 }
 
-static void save_state(const char *path, const TrackList *list, int selected, int playing)
+static void save_state(const char *path, const TrackList *list, int selected, int playing, int repeat_mode)
 {
     FILE *fp;
     AudioState state_now;
@@ -92,6 +105,7 @@ static void save_state(const char *path, const TrackList *list, int selected, in
         return;
     }
 
+    fprintf(fp, "version=1\n");
     if (list->count > 0 && selected >= 0 && selected < list->count) {
         fprintf(fp, "selected_path=%s\n", list->tracks[selected].path);
     }
@@ -104,8 +118,21 @@ static void save_state(const char *path, const TrackList *list, int selected, in
         fprintf(fp, "resume_play=0\n");
         fprintf(fp, "elapsed=0\n");
     }
+    fprintf(fp, "repeat_mode=%d\n", repeat_mode);
     fprintf(fp, "volume=%d\n", audio_get_volume());
     fclose(fp);
+}
+
+static const char *repeat_label(int repeat_mode)
+{
+    switch (repeat_mode) {
+    case REPEAT_OFF:
+        return "Repeat Off";
+    case REPEAT_ONE:
+        return "Repeat One";
+    default:
+        return "Repeat All";
+    }
 }
 
 static int find_track_by_path(const TrackList *list, const char *path)
@@ -186,7 +213,7 @@ static void clamp_selected(const TrackList *list, int *selected)
     }
 }
 
-static int handle_action(InputAction action, const TrackList *list, int *selected, int *playing, int *running, char *message, size_t message_size)
+static int handle_action(InputAction action, const TrackList *list, int *selected, int *playing, int *repeat_mode, int *running, char *message, size_t message_size)
 {
     int save_needed = 0;
 
@@ -237,6 +264,11 @@ static int handle_action(InputAction action, const TrackList *list, int *selecte
             snprintf(message, message_size, "No MP3 files found");
         }
         break;
+    case ACTION_REPEAT_TOGGLE:
+        *repeat_mode = (*repeat_mode + 1) % 3;
+        snprintf(message, message_size, "%s", repeat_label(*repeat_mode));
+        save_needed = 1;
+        break;
     case ACTION_PREV:
         if (list->count > 0) {
             (*selected)--;
@@ -285,6 +317,7 @@ int main(int argc, char **argv)
     int running = 1;
     int selected = 0;
     int playing = -1;
+    int repeat_mode = REPEAT_ALL;
     Uint32 last_log = 0;
     Uint32 started_at = 0;
     Uint32 auto_quit_ms = 0;
@@ -300,6 +333,7 @@ int main(int argc, char **argv)
     srand((unsigned int)time(NULL));
     state_file_path(state_path, sizeof(state_path), argv && argv[0] ? argv[0] : NULL);
     load_state(state_path, &saved_state);
+    repeat_mode = saved_state.repeat_mode;
     printf("state file: %s saved_volume=%d\n", state_path, saved_state.volume);
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_JOYSTICK) != 0) {
@@ -349,24 +383,32 @@ int main(int argc, char **argv)
         /* evdev thread input */
         {
             InputAction action = input_poll_joystick();
-            if (handle_action(action, &list, &selected, &playing, &running, message, sizeof(message))) {
-                save_state(state_path, &list, selected, playing);
+            if (handle_action(action, &list, &selected, &playing, &repeat_mode, &running, message, sizeof(message))) {
+                save_state(state_path, &list, selected, playing, repeat_mode);
             }
         }
 
         /* SDL event queue (keyboard fallback / SDL_QUIT) */
         while (SDL_PollEvent(&event)) {
             InputAction action = input_event_to_action(&event);
-            if (handle_action(action, &list, &selected, &playing, &running, message, sizeof(message))) {
-                save_state(state_path, &list, selected, playing);
+            if (handle_action(action, &list, &selected, &playing, &repeat_mode, &running, message, sizeof(message))) {
+                save_state(state_path, &list, selected, playing, repeat_mode);
             }
         }
 
         if (audio_take_finished() && playing >= 0 && list.count > 0) {
-            selected = playing + 1;
-            clamp_selected(&list, &selected);
-            playing = play_selected(&list, selected, message, sizeof(message));
-            save_state(state_path, &list, selected, playing);
+            if (repeat_mode == REPEAT_ONE) {
+                selected = playing;
+                playing = play_selected(&list, selected, message, sizeof(message));
+            } else if (repeat_mode == REPEAT_OFF && playing + 1 >= list.count) {
+                playing = -1;
+                snprintf(message, sizeof(message), "Finished");
+            } else {
+                selected = playing + 1;
+                clamp_selected(&list, &selected);
+                playing = play_selected(&list, selected, message, sizeof(message));
+            }
+            save_state(state_path, &list, selected, playing, repeat_mode);
         }
 
         if (audio_state() == AUDIO_STOPPED) {
@@ -383,11 +425,11 @@ int main(int argc, char **argv)
             running = 0;
         }
 
-        ui_render(&list, selected, playing, audio_state(), audio_elapsed_seconds(), audio_get_volume(), message);
+        ui_render(&list, selected, playing, audio_state(), audio_elapsed_seconds(), audio_get_volume(), repeat_label(repeat_mode), message);
         SDL_Delay(33);
     }
 
-    save_state(state_path, &list, selected, playing);
+    save_state(state_path, &list, selected, playing, repeat_mode);
     audio_stop();
     ui_shutdown();
     input_shutdown();

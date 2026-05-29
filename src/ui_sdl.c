@@ -426,7 +426,7 @@ void ui_shutdown(void)
     screen = NULL;
 }
 
-void ui_render(const TrackList *list, int selected, int playing, AudioState state, int elapsed_seconds, int volume, const char *message)
+void ui_render(const TrackList *list, int selected, int playing, AudioState state, int elapsed_seconds, int volume, const char *repeat_label, const char *message)
 {
     int i;
     int first = 0;
@@ -467,7 +467,8 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
     fill_round_rect(18, 14, SCREEN_W - 36, SCREEN_H - 28, 18, panel_shadow);
     fill_round_rect(22, 18, SCREEN_W - 44, SCREEN_H - 36, 16, shell);
 
-    draw_text_scaled(54, 52, "Garlic MP3", fg, 10, 2);
+    draw_text_scaled(38, 52, "Garlic MP3", fg, 10, 2);
+    draw_text(38, 74, repeat_label ? repeat_label : "Repeat All", muted, 14);
     draw_text(474, 49, state_label(state), muted, 12);
 
     if (list->count == 0) {
@@ -537,7 +538,7 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
     } else {
         draw_text(54, 385, "Ready", hi, 10);
     }
-    draw_text(54, 405, "A Play  B Stop  X/Y Pause  Start Shuffle", muted, 54);
+    draw_text(54, 405, "A Play B Stop X/Y Pause", muted, 51);
     draw_volume_bar(468, 385, 92, 8, volume, fg, rgb(60, 70, 80), hi);
     draw_text(38, 440, "Menu to quit", muted, 32);
     SDL_UnlockSurface(screen);

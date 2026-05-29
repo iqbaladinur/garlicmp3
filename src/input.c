@@ -4,8 +4,6 @@
 #include <string.h>
 
 static SDL_Joystick *joy = NULL;
-static int quit_combo_select = 0;
-static int quit_combo_start  = 0;
 static int hat_latched = 0;
 
 enum {
@@ -16,9 +14,9 @@ enum {
     SDL_BTN_L      = 4,
     SDL_BTN_R      = 5,
     SDL_BTN_L2     = 6,
-    SDL_BTN_R2     = 7,
+    SDL_BTN_SELECT = 7,
     SDL_BTN_START  = 8,
-    SDL_BTN_SELECT = 9,
+    SDL_BTN_MENU   = 9,
     SDL_BTN_VOL_UP = 10,
     SDL_BTN_VOL_DOWN = 11
 };
@@ -60,12 +58,7 @@ InputAction input_poll_joystick(void)
 
 static InputAction button_action(int button, int pressed)
 {
-    if (button == SDL_BTN_SELECT) quit_combo_select = pressed;
-    if (button == SDL_BTN_START)  quit_combo_start  = pressed;
-
     if (!pressed) return ACTION_NONE;
-
-    if (quit_combo_select && quit_combo_start) return ACTION_QUIT;
 
     switch (button) {
     case SDL_BTN_A:      return ACTION_PLAY;
@@ -74,10 +67,10 @@ static InputAction button_action(int button, int pressed)
     case SDL_BTN_Y:      return ACTION_PAUSE;
     case SDL_BTN_L:
     case SDL_BTN_L2:     return ACTION_VOL_DOWN;
-    case SDL_BTN_R:
-    case SDL_BTN_R2:     return ACTION_VOL_UP;
+    case SDL_BTN_R:      return ACTION_VOL_UP;
+    case SDL_BTN_SELECT: return ACTION_REPEAT_TOGGLE;
     case SDL_BTN_START:  return ACTION_SHUFFLE_PLAY;
-    case SDL_BTN_SELECT: return ACTION_QUIT;
+    case SDL_BTN_MENU:   return ACTION_QUIT;
     case SDL_BTN_VOL_UP: return ACTION_VOL_UP;
     case SDL_BTN_VOL_DOWN: return ACTION_VOL_DOWN;
     default:

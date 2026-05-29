@@ -242,6 +242,84 @@ static void clean_display_name(char *out, size_t out_size, const char *name)
     }
 }
 
+static void copy_id3_text(char *out, size_t out_size, const unsigned char *src, size_t src_size)
+{
+    size_t start = 0;
+    size_t end = src_size;
+    size_t i;
+    size_t j = 0;
+    int last_space = 1;
+
+    if (!out || out_size == 0) {
+        return;
+    }
+    out[0] = '\0';
+
+    while (start < src_size && (src[start] == '\0' || isspace(src[start]))) {
+        start++;
+    }
+    while (end > start && (src[end - 1] == '\0' || isspace(src[end - 1]))) {
+        end--;
+    }
+
+    for (i = start; i < end && j + 1 < out_size; i++) {
+        unsigned char c = src[i];
+        if (c < 32 || c > 126) {
+            c = ' ';
+        }
+        if (isspace(c)) {
+            if (!last_space && j + 1 < out_size) {
+                out[j++] = ' ';
+            }
+            last_space = 1;
+        } else {
+            out[j++] = (char)c;
+            last_space = 0;
+        }
+    }
+    out[j] = '\0';
+}
+
+static int read_id3v1_display_name(const char *path, char *out, size_t out_size)
+{
+    FILE *fp;
+    unsigned char tag[128];
+    char title[64];
+    char artist[64];
+
+    if (!out || out_size == 0) {
+        return 0;
+    }
+    out[0] = '\0';
+
+    fp = fopen(path, "rb");
+    if (!fp) {
+        return 0;
+    }
+    if (fseek(fp, -128, SEEK_END) != 0 || fread(tag, 1, sizeof(tag), fp) != sizeof(tag)) {
+        fclose(fp);
+        return 0;
+    }
+    fclose(fp);
+
+    if (memcmp(tag, "TAG", 3) != 0) {
+        return 0;
+    }
+
+    copy_id3_text(title, sizeof(title), tag + 3, 30);
+    copy_id3_text(artist, sizeof(artist), tag + 33, 30);
+
+    if (title[0] && artist[0]) {
+        snprintf(out, out_size, "%s - %s", artist, title);
+    } else if (title[0]) {
+        snprintf(out, out_size, "%s", title);
+    } else {
+        return 0;
+    }
+
+    return 1;
+}
+
 static void add_track(TrackList *list, const char *dir, const char *name)
 {
     Track *track;
@@ -261,7 +339,9 @@ static void add_track(TrackList *list, const char *dir, const char *name)
         return;
     }
     snprintf(track->name, sizeof(track->name), "%s", name);
-    clean_display_name(track->display_name, sizeof(track->display_name), name);
+    if (!read_id3v1_display_name(track->path, track->display_name, sizeof(track->display_name))) {
+        clean_display_name(track->display_name, sizeof(track->display_name), name);
+    }
     track->duration_seconds = estimate_mp3_duration(track->path);
     list->count++;
 }
