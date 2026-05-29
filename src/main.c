@@ -7,17 +7,19 @@
 #include <stdio.h>
 #include <string.h>
 
-static void play_selected(const TrackList *list, int selected, char *message, size_t message_size)
+static int play_selected(const TrackList *list, int selected, char *message, size_t message_size)
 {
     if (list->count <= 0 || selected < 0 || selected >= list->count) {
         snprintf(message, message_size, "No track selected");
-        return;
+        return -1;
     }
 
     if (audio_play(list->tracks[selected].path) == 0) {
         snprintf(message, message_size, "Playing: %s", list->tracks[selected].name);
+        return selected;
     } else {
         snprintf(message, message_size, "Failed to start mpg123");
+        return -1;
     }
 }
 
@@ -32,7 +34,7 @@ static void clamp_selected(const TrackList *list, int *selected)
     }
 }
 
-static void handle_action(InputAction action, const TrackList *list, int *selected, int *running, char *message, size_t message_size)
+static void handle_action(InputAction action, const TrackList *list, int *selected, int *playing, int *running, char *message, size_t message_size)
 {
     if (action != ACTION_NONE) {
         printf("Action=%d selected=%d tracks=%d\n", action, *selected, list->count);
@@ -54,10 +56,11 @@ static void handle_action(InputAction action, const TrackList *list, int *select
         }
         break;
     case ACTION_PLAY:
-        play_selected(list, *selected, message, message_size);
+        *playing = play_selected(list, *selected, message, message_size);
         break;
     case ACTION_STOP:
         audio_stop();
+        *playing = -1;
         snprintf(message, message_size, "Stopped");
         break;
     case ACTION_PAUSE:
@@ -68,14 +71,14 @@ static void handle_action(InputAction action, const TrackList *list, int *select
         if (list->count > 0) {
             (*selected)--;
             clamp_selected(list, selected);
-            play_selected(list, *selected, message, message_size);
+            *playing = play_selected(list, *selected, message, message_size);
         }
         break;
     case ACTION_NEXT:
         if (list->count > 0) {
             (*selected)++;
             clamp_selected(list, selected);
-            play_selected(list, *selected, message, message_size);
+            *playing = play_selected(list, *selected, message, message_size);
         }
         break;
     case ACTION_VOL_DOWN:
@@ -100,9 +103,10 @@ int main(int argc, char **argv)
     SDL_Event event;
     int running = 1;
     int selected = 0;
+    int playing = -1;
     Uint32 last_log = 0;
     Uint32 started_at = 0;
-    Uint32 auto_quit_ms = 60000;
+    Uint32 auto_quit_ms = 0;
     char message[128] = "";
 
     (void)argc;
@@ -142,13 +146,17 @@ int main(int argc, char **argv)
         /* evdev thread input */
         {
             InputAction action = input_poll_joystick();
-            handle_action(action, &list, &selected, &running, message, sizeof(message));
+            handle_action(action, &list, &selected, &playing, &running, message, sizeof(message));
         }
 
         /* SDL event queue (keyboard fallback / SDL_QUIT) */
         while (SDL_PollEvent(&event)) {
             InputAction action = input_event_to_action(&event);
-            handle_action(action, &list, &selected, &running, message, sizeof(message));
+            handle_action(action, &list, &selected, &playing, &running, message, sizeof(message));
+        }
+
+        if (audio_state() == AUDIO_STOPPED) {
+            playing = -1;
         }
 
         if (SDL_GetTicks() - last_log > 10000) {
@@ -161,7 +169,7 @@ int main(int argc, char **argv)
             running = 0;
         }
 
-        ui_render(&list, selected, audio_state(), message);
+        ui_render(&list, selected, playing, audio_state(), audio_elapsed_seconds(), message);
         SDL_Delay(33);
     }
 

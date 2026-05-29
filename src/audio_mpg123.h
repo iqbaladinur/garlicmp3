@@ -14,5 +14,6 @@ void audio_volume_down(void);
 void audio_volume_up(void);
 AudioState audio_state(void);
 void audio_poll(void);
+int audio_elapsed_seconds(void);
 
 #endif

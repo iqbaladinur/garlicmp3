@@ -15,9 +15,10 @@ enum {
     SDL_BTN_Y      = 3,
     SDL_BTN_L      = 4,
     SDL_BTN_R      = 5,
-    SDL_BTN_SELECT = 8,
-    SDL_BTN_START  = 9,
-    SDL_BTN_MENU   = 10
+    SDL_BTN_START  = 8,
+    SDL_BTN_SELECT = 9,
+    SDL_BTN_VOL_UP = 10,
+    SDL_BTN_VOL_DOWN = 11
 };
 
 void input_init(void)
@@ -67,15 +68,14 @@ static InputAction button_action(int button, int pressed)
     switch (button) {
     case SDL_BTN_A:      return ACTION_PLAY;
     case SDL_BTN_B:      return ACTION_STOP;
-    case SDL_BTN_X:      return ACTION_VOL_DOWN;
-    case SDL_BTN_Y:      return ACTION_VOL_UP;
+    case SDL_BTN_X:      return ACTION_VOL_UP;
+    case SDL_BTN_Y:      return ACTION_VOL_DOWN;
     case SDL_BTN_L:      return ACTION_PREV;
     case SDL_BTN_R:      return ACTION_NEXT;
     case SDL_BTN_START:  return ACTION_PAUSE;
-    case SDL_BTN_MENU:   return ACTION_QUIT;
-    case 6:              return ACTION_VOL_DOWN; /* L2 */
-    case 7:              return ACTION_VOL_UP;   /* R2 */
-    case 11:             return ACTION_VOL_DOWN; /* hw vol- */
+    case SDL_BTN_SELECT: return ACTION_QUIT;
+    case SDL_BTN_VOL_UP: return ACTION_VOL_UP;
+    case SDL_BTN_VOL_DOWN: return ACTION_VOL_DOWN;
     default:
         printf("JOY unknown btn=%d\n", button);
         fflush(stdout);

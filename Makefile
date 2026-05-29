@@ -50,6 +50,7 @@ dist: all
 	cp $(TARGET) $(DIST_DIR)/garlic-mp3-player
 	cp APPS/GarlicMP3.sh $(DIST_ROOT)/GarlicMP3.sh
 	cp README.md $(DIST_DIR)/README.txt
+	if [ -d "assets" ]; then cp -a assets $(DIST_DIR)/; fi
 	if [ "$(NO_BUNDLED_LIBS)" != "1" ] && [ -d "ref/drastic/libs" ]; then cp -a ref/drastic/libs $(DIST_DIR)/; fi
 	if [ "$(NO_BUNDLED_LIBS)" != "1" ] && [ -f "$(GARLIC_SYSROOT)/lib/libSDL-1.2.so.0.11.4" ]; then cp "$(GARLIC_SYSROOT)/lib/libSDL-1.2.so.0.11.4" $(DIST_DIR)/libs/; fi
 	if [ "$(NO_BUNDLED_LIBS)" != "1" ] && [ -d "$(DIST_DIR)/libs" ]; then rm -f $(DIST_DIR)/libs/libSDL-1.2.so.0 $(DIST_DIR)/libs/libSDL.so; cp $(DIST_DIR)/libs/libSDL-1.2.so.0.11.4 $(DIST_DIR)/libs/libSDL-1.2.so.0; cp $(DIST_DIR)/libs/libSDL-1.2.so.0.11.4 $(DIST_DIR)/libs/libSDL.so; fi

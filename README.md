@@ -34,6 +34,7 @@ dist/APPS/
   GarlicMP3/
     garlic-mp3-player
     mpg123
+    assets/            # optional, for background.bmp
     MUSIC/
     README.txt
 ```
@@ -59,6 +60,17 @@ SD1:/mnt/mmc/MUSIC/
 
 The app scans one subdirectory level below those folders.
 
+## Optional Background Image
+
+The UI can load a custom 640x480 BMP without extra libraries:
+
+```text
+SD2:/Roms/APPS/GarlicMP3/assets/background.bmp
+```
+
+Use uncompressed BMP. PNG/JPG are intentionally not supported yet to keep the
+GarlicOS build simple.
+
 ## Controls
 
 | Button | Action |
@@ -78,7 +90,7 @@ The app scans one subdirectory level below those folders.
 - **App launches then returns immediately**: check `Roms/APPS/GarlicMP3/garlic-mp3.log`.
 - **UI opens but no sound**: verify `mpg123` exists in the app folder and is executable.
 - **No MP3 files shown**: only `.mp3` files are scanned; check music folder paths above.
-- **Volume does not change**: ALSA mixer control names may differ; check `garlic-mp3.log` for `amixer` output.
+- **Volume does not change**: the app writes `/sys/class/volume/value`; check `garlic-mp3.log` for `volume=` output.
 - **Controls wrong**: press the button and check `garlic-mp3.log` for `JOY unknown btn=X`, then update `src/input.c`.
 
 ## Alternative Build: Miyoo Toolchain (legacy)

@@ -8,6 +8,6 @@
 
 int ui_init(void);
 void ui_shutdown(void);
-void ui_render(const TrackList *list, int selected, AudioState state, const char *message);
+void ui_render(const TrackList *list, int selected, int playing, AudioState state, int elapsed_seconds, const char *message);
 
 #endif

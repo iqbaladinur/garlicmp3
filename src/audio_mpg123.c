@@ -6,12 +6,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+#include <fcntl.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
 static pid_t player_pid = -1;
 static AudioState state = AUDIO_STOPPED;
+static time_t play_started_at = 0;
+static time_t pause_started_at = 0;
+static int paused_seconds = 0;
 
 static void reap_player(int blocking)
 {
@@ -27,9 +32,15 @@ static void reap_player(int blocking)
     if (got == player_pid) {
         player_pid = -1;
         state = AUDIO_STOPPED;
+        play_started_at = 0;
+        pause_started_at = 0;
+        paused_seconds = 0;
     } else if (got < 0 && errno == ECHILD) {
         player_pid = -1;
         state = AUDIO_STOPPED;
+        play_started_at = 0;
+        pause_started_at = 0;
+        paused_seconds = 0;
     }
 }
 
@@ -46,13 +57,41 @@ AudioState audio_state(void)
 
 void audio_stop(void)
 {
+    int i;
+
     if (player_pid <= 0) {
         state = AUDIO_STOPPED;
+        play_started_at = 0;
+        pause_started_at = 0;
+        paused_seconds = 0;
         return;
     }
 
     kill(player_pid, SIGTERM);
-    reap_player(1);
+    for (i = 0; i < 20; i++) {
+        reap_player(0);
+        if (player_pid <= 0) {
+            return;
+        }
+        usleep(10000);
+    }
+
+    kill(player_pid, SIGKILL);
+    for (i = 0; i < 20; i++) {
+        reap_player(0);
+        if (player_pid <= 0) {
+            return;
+        }
+        usleep(10000);
+    }
+
+    printf("audio_stop: failed to reap pid=%d\n", (int)player_pid);
+    fflush(stdout);
+    player_pid = -1;
+    state = AUDIO_STOPPED;
+    play_started_at = 0;
+    pause_started_at = 0;
+    paused_seconds = 0;
 }
 
 int audio_play(const char *path)
@@ -87,6 +126,9 @@ int audio_play(const char *path)
     }
 
     state = AUDIO_PLAYING;
+    play_started_at = time(NULL);
+    pause_started_at = 0;
+    paused_seconds = 0;
     printf("audio_play: playing pid=%d\n", (int)player_pid);
     fflush(stdout);
     return 0;
@@ -101,35 +143,79 @@ void audio_pause_toggle(void)
     if (state == AUDIO_PLAYING) {
         if (kill(player_pid, SIGSTOP) == 0) {
             state = AUDIO_PAUSED;
+            pause_started_at = time(NULL);
         }
     } else if (state == AUDIO_PAUSED) {
         if (kill(player_pid, SIGCONT) == 0) {
+            if (pause_started_at > 0) {
+                paused_seconds += (int)(time(NULL) - pause_started_at);
+            }
+            pause_started_at = 0;
             state = AUDIO_PLAYING;
         }
     }
 }
 
-static void run_amixer(const char *control, const char *delta)
+int audio_elapsed_seconds(void)
 {
-    char command[256];
-    int rc;
+    time_t now;
+    int elapsed;
 
-    snprintf(command, sizeof(command), "amixer set '%s' %s 2>&1", control, delta);
-    printf("amixer: %s\n", command);
-    fflush(stdout);
-    rc = system(command);
-    printf("amixer rc=%d\n", rc);
+    if (player_pid <= 0 || play_started_at <= 0 || state == AUDIO_STOPPED) {
+        return 0;
+    }
+
+    now = state == AUDIO_PAUSED && pause_started_at > 0 ? pause_started_at : time(NULL);
+    elapsed = (int)(now - play_started_at) - paused_seconds;
+    return elapsed > 0 ? elapsed : 0;
+}
+
+static int read_sys_volume(void)
+{
+    FILE *fp = fopen("/sys/class/volume/value", "r");
+    int value = 40;
+
+    if (!fp) {
+        perror("volume read");
+        return value;
+    }
+
+    if (fscanf(fp, "%d", &value) != 1) {
+        value = 40;
+    }
+    fclose(fp);
+    return value;
+}
+
+static void write_sys_volume(int value)
+{
+    FILE *fp;
+
+    if (value < 0) {
+        value = 0;
+    }
+    if (value > 100) {
+        value = 100;
+    }
+
+    fp = fopen("/sys/class/volume/value", "w");
+    if (!fp) {
+        perror("volume write");
+        return;
+    }
+
+    fprintf(fp, "%d\n", value);
+    fclose(fp);
+    printf("volume=%d\n", value);
     fflush(stdout);
 }
 
 void audio_volume_down(void)
 {
-    run_amixer("Master", "5%-");
-    run_amixer("PCM", "5%-");
+    write_sys_volume(read_sys_volume() - 5);
 }
 
 void audio_volume_up(void)
 {
-    run_amixer("Master", "5%+");
-    run_amixer("PCM", "5%+");
+    write_sys_volume(read_sys_volume() + 5);
 }

@@ -27,6 +27,167 @@ static int is_regular_or_unknown(const char *path)
     return S_ISREG(st.st_mode);
 }
 
+static unsigned int syncsafe_u32(const unsigned char *p)
+{
+    return ((unsigned int)(p[0] & 0x7f) << 21) |
+           ((unsigned int)(p[1] & 0x7f) << 14) |
+           ((unsigned int)(p[2] & 0x7f) << 7) |
+           (unsigned int)(p[3] & 0x7f);
+}
+
+static int bitrate_kbps(int version_id, int layer_id, int bitrate_index)
+{
+    static const int mpeg1_l3[16] = {0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0};
+    static const int mpeg2_l3[16] = {0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0};
+
+    if (layer_id != 1 || bitrate_index <= 0 || bitrate_index >= 15) {
+        return 0;
+    }
+
+    return version_id == 3 ? mpeg1_l3[bitrate_index] : mpeg2_l3[bitrate_index];
+}
+
+static int sample_rate_hz(int version_id, int sample_index)
+{
+    static const int base[3] = {44100, 48000, 32000};
+    int rate;
+
+    if (sample_index < 0 || sample_index >= 3) {
+        return 0;
+    }
+
+    rate = base[sample_index];
+    if (version_id == 2) {
+        rate /= 2;
+    } else if (version_id == 0) {
+        rate /= 4;
+    } else if (version_id != 3) {
+        return 0;
+    }
+    return rate;
+}
+
+static int read_u32_be(FILE *fp, long offset, unsigned int *out)
+{
+    unsigned char b[4];
+
+    if (fseek(fp, offset, SEEK_SET) != 0) {
+        return 0;
+    }
+    if (fread(b, 1, sizeof(b), fp) != sizeof(b)) {
+        return 0;
+    }
+    *out = ((unsigned int)b[0] << 24) | ((unsigned int)b[1] << 16) | ((unsigned int)b[2] << 8) | (unsigned int)b[3];
+    return 1;
+}
+
+static int xing_duration(FILE *fp, long frame_offset, int version_id, int channel_mode, int sample_rate)
+{
+    long xing_offset;
+    unsigned char tag[4];
+    unsigned int flags;
+    unsigned int frames;
+    int samples_per_frame;
+
+    if (version_id == 3) {
+        xing_offset = frame_offset + 4 + (channel_mode == 3 ? 17 : 32);
+        samples_per_frame = 1152;
+    } else {
+        xing_offset = frame_offset + 4 + (channel_mode == 3 ? 9 : 17);
+        samples_per_frame = 576;
+    }
+
+    if (fseek(fp, xing_offset, SEEK_SET) != 0 || fread(tag, 1, sizeof(tag), fp) != sizeof(tag)) {
+        return 0;
+    }
+    if (memcmp(tag, "Xing", 4) != 0 && memcmp(tag, "Info", 4) != 0) {
+        return 0;
+    }
+    if (!read_u32_be(fp, xing_offset + 4, &flags) || !(flags & 1)) {
+        return 0;
+    }
+    if (!read_u32_be(fp, xing_offset + 8, &frames) || frames == 0 || sample_rate <= 0) {
+        return 0;
+    }
+
+    return (int)(((unsigned long long)frames * (unsigned int)samples_per_frame + (unsigned int)sample_rate / 2) / (unsigned int)sample_rate);
+}
+
+static int estimate_mp3_duration(const char *path)
+{
+    FILE *fp;
+    unsigned char h[10];
+    long file_size;
+    long offset = 0;
+    long search_end;
+    int duration = 0;
+
+    fp = fopen(path, "rb");
+    if (!fp) {
+        return 0;
+    }
+
+    if (fseek(fp, 0, SEEK_END) != 0) {
+        fclose(fp);
+        return 0;
+    }
+    file_size = ftell(fp);
+    if (file_size <= 0 || fseek(fp, 0, SEEK_SET) != 0) {
+        fclose(fp);
+        return 0;
+    }
+
+    if (fread(h, 1, sizeof(h), fp) == sizeof(h) && memcmp(h, "ID3", 3) == 0) {
+        offset = 10 + (long)syncsafe_u32(&h[6]);
+    }
+
+    search_end = offset + 65536;
+    if (search_end > file_size - 4) {
+        search_end = file_size - 4;
+    }
+
+    while (offset < search_end) {
+        unsigned int header;
+        int version_id;
+        int layer_id;
+        int bitrate_index;
+        int sample_index;
+        int channel_mode;
+        int bitrate;
+        int sample_rate;
+
+        if (!read_u32_be(fp, offset, &header)) {
+            break;
+        }
+
+        if ((header & 0xffe00000u) == 0xffe00000u) {
+            version_id = (int)((header >> 19) & 3);
+            layer_id = (int)((header >> 17) & 3);
+            bitrate_index = (int)((header >> 12) & 15);
+            sample_index = (int)((header >> 10) & 3);
+            channel_mode = (int)((header >> 6) & 3);
+            bitrate = bitrate_kbps(version_id, layer_id, bitrate_index);
+            sample_rate = sample_rate_hz(version_id, sample_index);
+
+            if (bitrate > 0 && sample_rate > 0) {
+                duration = xing_duration(fp, offset, version_id, channel_mode, sample_rate);
+                if (duration <= 0) {
+                    long audio_bytes = file_size - offset;
+                    if (audio_bytes > 128) {
+                        duration = (int)(((unsigned long long)audio_bytes * 8u + (unsigned int)bitrate * 500u) / ((unsigned int)bitrate * 1000u));
+                    }
+                }
+                break;
+            }
+        }
+
+        offset++;
+    }
+
+    fclose(fp);
+    return duration > 0 ? duration : 0;
+}
+
 static void add_track(TrackList *list, const char *dir, const char *name)
 {
     Track *track;
@@ -46,6 +207,7 @@ static void add_track(TrackList *list, const char *dir, const char *name)
         return;
     }
     snprintf(track->name, sizeof(track->name), "%s", name);
+    track->duration_seconds = estimate_mp3_duration(track->path);
     list->count++;
 }
 

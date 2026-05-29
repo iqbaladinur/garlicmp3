@@ -16,6 +16,7 @@ typedef int32_t Sint32;
 #define SDL_INIT_JOYSTICK   0x00000200
 
 #define SDL_SWSURFACE       0x00000000
+#define SDL_DISABLE         0
 #define SDL_ENABLE          1
 
 #define SDL_BYTEORDER       1234
@@ -151,13 +152,17 @@ int SDL_Init(Uint32 flags);
 void SDL_Quit(void);
 const char *SDL_GetError(void);
 SDL_Surface *SDL_SetVideoMode(int width, int height, int bpp, Uint32 flags);
+SDL_Surface *SDL_LoadBMP(const char *file);
+void SDL_FreeSurface(SDL_Surface *surface);
 void SDL_WM_SetCaption(const char *title, const char *icon);
+int SDL_ShowCursor(int toggle);
 int SDL_PollEvent(SDL_Event *event);
 void SDL_Delay(Uint32 ms);
 int SDL_Flip(SDL_Surface *screen);
 int SDL_LockSurface(SDL_Surface *surface);
 void SDL_UnlockSurface(SDL_Surface *surface);
 int SDL_FillRect(SDL_Surface *dst, SDL_Rect *dstrect, Uint32 color);
+int SDL_BlitSurface(SDL_Surface *src, SDL_Rect *srcrect, SDL_Surface *dst, SDL_Rect *dstrect);
 Uint32 SDL_MapRGB(const SDL_PixelFormat *format, Uint8 r, Uint8 g, Uint8 b);
 
 int SDL_NumJoysticks(void);
