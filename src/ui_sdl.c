@@ -286,6 +286,31 @@ static void draw_fallback_background(void)
     fill_circle(566, 388, 98, rgb(52, 62, 71));
 }
 
+static void draw_equalizer_bg(AudioState state)
+{
+    static const unsigned char base[24] = {
+        10, 22, 16, 34, 28, 42, 18, 30,
+        12, 38, 24, 44, 14, 32, 20, 40,
+        26, 18, 36, 16, 30, 22, 42, 12
+    };
+    int i;
+    int frame = state == AUDIO_PLAYING ? (int)(SDL_GetTicks() / 95) : 0;
+    Uint32 bar = rgb(25, 33, 40);
+    Uint32 bar_hi = rgb(31, 43, 52);
+
+    for (i = 0; i < 24; i++) {
+        int x = 42 + i * 15;
+        int h = base[(i + frame) % 24] + ((i * 7 + frame * 3) % 11);
+        fill_round_rect(x, 340 - h, 7, h, 3, i % 4 == 0 ? bar_hi : bar);
+    }
+
+    for (i = 0; i < 33; i++) {
+        int x = 238 + i * 11;
+        int h = 8 + ((base[(i * 3 + frame) % 24] + frame) % 30);
+        fill_round_rect(x, 92 - h, 5, h, 2, bar);
+    }
+}
+
 static void format_time_pair(int elapsed_seconds, int duration_seconds, char *out, size_t out_size)
 {
     int elapsed_minutes;
@@ -481,6 +506,7 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
 
     fill_round_rect(18, 14, SCREEN_W - 36, SCREEN_H - 28, 18, panel_shadow);
     fill_round_rect(22, 18, SCREEN_W - 44, SCREEN_H - 36, 16, shell);
+    draw_equalizer_bg(state);
 
     draw_text_scaled(38, 52, "Garlic MP3", fg, 10, 2);
     draw_text_right(594, 49, state_label(state), muted, 12);
