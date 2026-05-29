@@ -194,6 +194,21 @@ static void draw_text(int x, int y, const char *text, Uint32 fg, int max_chars)
     }
 }
 
+static void draw_text_right(int right_x, int y, const char *text, Uint32 fg, int max_chars)
+{
+    int len;
+
+    if (!text) {
+        return;
+    }
+
+    len = (int)strlen(text);
+    if (max_chars > 0 && len > max_chars) {
+        len = max_chars;
+    }
+    draw_text(right_x - len * CHAR_W, y, text, fg, max_chars);
+}
+
 static void draw_marquee_text(int x, int y, const char *text, Uint32 fg, int max_chars, int active)
 {
     int len;
@@ -468,8 +483,8 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
     fill_round_rect(22, 18, SCREEN_W - 44, SCREEN_H - 36, 16, shell);
 
     draw_text_scaled(38, 52, "Garlic MP3", fg, 10, 2);
+    draw_text_right(594, 49, state_label(state), muted, 12);
     draw_text(38, 74, repeat_label ? repeat_label : "Repeat All", muted, 14);
-    draw_text(474, 49, state_label(state), muted, 12);
 
     if (list->count == 0) {
         fill_round_rect(42, 108, 556, 252, 14, panel_shadow);
@@ -485,7 +500,7 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
         }
 
         snprintf(counter, sizeof(counter), "%03d/%03d", selected + 1, list->count);
-        draw_text(474, 68, counter, muted, 12);
+        draw_text_right(594, 68, counter, muted, 12);
 
         fill_round_rect(42, 108, 382, 252, 14, panel_shadow);
         fill_round_rect(38, 104, 382, 252, 14, border);
