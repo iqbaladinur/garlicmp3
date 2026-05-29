@@ -555,16 +555,20 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
             int idx = first + i;
             int y = 122 + i * 17;
             char line[96];
+            Uint32 row_color = idx == selected ? hi_text : fg;
 
             if (idx == selected) {
                 fill_round_rect(50, y - 5, 356, 18, 7, hi);
             }
 
             snprintf(line, sizeof(line), "%03d %s", idx + 1, list->tracks[idx].display_name);
+            if (idx == playing) {
+                draw_text(54, y, ">", row_color, 1);
+            }
             if (idx == selected) {
-                draw_marquee_text(62, y, line, hi_text, 41, 1);
+                draw_marquee_text(70, y, line, hi_text, 40, 1);
             } else {
-                draw_text(62, y, line, fg, 41);
+                draw_text(70, y, line, fg, 40);
             }
         }
     }
@@ -579,7 +583,7 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
     } else {
         draw_text(54, 385, "Ready", hi, 10);
     }
-    draw_text(54, 405, "A Play B Stop X/Y Pause", muted, 51);
+    draw_text(54, 405, "A Play B Stop X/Y Pause Sel Repeat", muted, 47);
     draw_volume_bar(468, 385, 92, 8, volume, fg, rgb(60, 70, 80), hi);
     draw_text(38, 440, "Menu to quit", muted, 32);
     SDL_UnlockSurface(screen);

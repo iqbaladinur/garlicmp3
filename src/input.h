@@ -21,6 +21,7 @@ typedef enum InputAction {
 
 void input_init(void);
 void input_shutdown(void);
+void input_set_debug(int enabled);
 InputAction input_poll_joystick(void);
 InputAction input_event_to_action(const SDL_Event *event);
 

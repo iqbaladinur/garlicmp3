@@ -7,6 +7,7 @@ static SDL_Joystick *joy = NULL;
 static int hat_latched = 0;
 static InputAction hat_hold_action = ACTION_NONE;
 static Uint32 hat_next_repeat = 0;
+static int input_debug = 0;
 
 #define HAT_REPEAT_DELAY_MS 360
 #define HAT_REPEAT_RATE_MS 95
@@ -56,6 +57,11 @@ void input_shutdown(void)
     }
 }
 
+void input_set_debug(int enabled)
+{
+    input_debug = enabled ? 1 : 0;
+}
+
 InputAction input_poll_joystick(void)
 {
     Uint32 now;
@@ -100,8 +106,10 @@ static InputAction button_action(int button, int pressed)
     case SDL_BTN_VOL_UP: return ACTION_VOL_UP;
     case SDL_BTN_VOL_DOWN: return ACTION_VOL_DOWN;
     default:
-        printf("JOY unknown btn=%d\n", button);
-        fflush(stdout);
+        if (input_debug) {
+            printf("JOY unknown btn=%d\n", button);
+            fflush(stdout);
+        }
         return ACTION_NONE;
     }
 }
@@ -109,8 +117,10 @@ static InputAction button_action(int button, int pressed)
 InputAction input_event_to_action(const SDL_Event *event)
 {
     if (event->type == SDL_JOYBUTTONDOWN) {
-        printf("JOY btn=%d down\n", event->jbutton.button);
-        fflush(stdout);
+        if (input_debug) {
+            printf("JOY btn=%d down\n", event->jbutton.button);
+            fflush(stdout);
+        }
         return button_action(event->jbutton.button, 1);
     }
     if (event->type == SDL_JOYBUTTONUP) {
@@ -119,8 +129,10 @@ InputAction input_event_to_action(const SDL_Event *event)
 
     if (event->type == SDL_JOYHATMOTION) {
         Uint8 val = event->jhat.value;
-        printf("JOY hat=%d\n", val);
-        fflush(stdout);
+        if (input_debug) {
+            printf("JOY hat=%d\n", val);
+            fflush(stdout);
+        }
 
         if (val == SDL_HAT_CENTERED) {
             hat_latched = 0;
@@ -149,8 +161,10 @@ InputAction input_event_to_action(const SDL_Event *event)
     if (event->type == SDL_KEYDOWN) {
         int scan = (int)event->key.keysym.scancode;
         int sym  = (int)event->key.keysym.sym;
-        printf("KEY scan=%d sym=%d\n", scan, sym);
-        fflush(stdout);
+        if (input_debug) {
+            printf("KEY scan=%d sym=%d\n", scan, sym);
+            fflush(stdout);
+        }
         if (scan == 116 || sym == 117) return ACTION_QUIT; /* MENU/power */
         return ACTION_NONE;
     }

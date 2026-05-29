@@ -9,6 +9,9 @@
 #include <string.h>
 #include <time.h>
 
+#define RESUME_SKIP_END_SECONDS 10
+#define SHUFFLE_RECENT_MAX 8
+
 typedef struct AppState {
     char path[TRACK_PATH_MAX];
     char playing_path[TRACK_PATH_MAX];
@@ -16,7 +19,14 @@ typedef struct AppState {
     int resume_play;
     int elapsed_seconds;
     int repeat_mode;
+    int debug;
 } AppState;
+
+typedef struct ShuffleHistory {
+    int items[SHUFFLE_RECENT_MAX];
+    int count;
+    int pos;
+} ShuffleHistory;
 
 typedef enum RepeatMode {
     REPEAT_OFF = 0,
@@ -86,6 +96,8 @@ static void load_state(const char *path, AppState *state)
             if (state->repeat_mode < REPEAT_OFF || state->repeat_mode > REPEAT_ONE) {
                 state->repeat_mode = REPEAT_ALL;
             }
+        } else if (strncmp(line, "debug=", 6) == 0) {
+            state->debug = atoi(line + 6) ? 1 : 0;
         } else if (strncmp(line, "volume=", 7) == 0) {
             state->volume = atoi(line + 7);
         }
@@ -94,7 +106,7 @@ static void load_state(const char *path, AppState *state)
     fclose(fp);
 }
 
-static void save_state(const char *path, const TrackList *list, int selected, int playing, int repeat_mode)
+static void save_state(const char *path, const TrackList *list, int selected, int playing, int repeat_mode, int debug)
 {
     FILE *fp;
     AudioState state_now;
@@ -119,6 +131,7 @@ static void save_state(const char *path, const TrackList *list, int selected, in
         fprintf(fp, "elapsed=0\n");
     }
     fprintf(fp, "repeat_mode=%d\n", repeat_mode);
+    fprintf(fp, "debug=%d\n", debug ? 1 : 0);
     fprintf(fp, "volume=%d\n", audio_get_volume());
     fclose(fp);
 }
@@ -174,9 +187,16 @@ static int resume_selected(const TrackList *list, int selected, int elapsed_seco
         snprintf(message, message_size, "No track selected");
         return -1;
     }
+    if (list->tracks[selected].duration_seconds > 0 &&
+        elapsed_seconds >= list->tracks[selected].duration_seconds - RESUME_SKIP_END_SECONDS) {
+        elapsed_seconds = 0;
+        snprintf(message, message_size, "Restarted: %s", list->tracks[selected].display_name);
+    }
 
     if (audio_play_from_seconds(list->tracks[selected].path, elapsed_seconds) == 0) {
-        snprintf(message, message_size, "Resumed: %s", list->tracks[selected].display_name);
+        if (elapsed_seconds > 0) {
+            snprintf(message, message_size, "Resumed: %s", list->tracks[selected].display_name);
+        }
         return selected;
     }
 
@@ -184,9 +204,38 @@ static int resume_selected(const TrackList *list, int selected, int elapsed_seco
     return -1;
 }
 
-static int random_track_index(const TrackList *list, int current)
+static int shuffle_history_contains(const ShuffleHistory *history, int idx)
 {
+    int i;
+
+    for (i = 0; i < history->count; i++) {
+        if (history->items[i] == idx) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void shuffle_history_add(ShuffleHistory *history, int idx)
+{
+    if (idx < 0) {
+        return;
+    }
+
+    if (history->count < SHUFFLE_RECENT_MAX) {
+        history->items[history->count++] = idx;
+    } else {
+        history->items[history->pos] = idx;
+        history->pos = (history->pos + 1) % SHUFFLE_RECENT_MAX;
+    }
+}
+
+static int random_track_index(const TrackList *list, int current, const ShuffleHistory *history)
+{
+    int i;
     int next;
+    int candidates[TRACK_MAX];
+    int candidate_count = 0;
 
     if (list->count <= 0) {
         return -1;
@@ -195,11 +244,26 @@ static int random_track_index(const TrackList *list, int current)
         return 0;
     }
 
-    next = rand() % list->count;
-    if (next == current) {
-        next = (next + 1 + (rand() % (list->count - 1))) % list->count;
+    for (i = 0; i < list->count; i++) {
+        if (i != current && !shuffle_history_contains(history, i)) {
+            candidates[candidate_count++] = i;
+        }
     }
-    return next;
+
+    if (candidate_count <= 0) {
+        for (i = 0; i < list->count; i++) {
+            if (i != current) {
+                candidates[candidate_count++] = i;
+            }
+        }
+    }
+
+    if (candidate_count <= 0) {
+        return current;
+    }
+
+    next = rand() % candidate_count;
+    return candidates[next];
 }
 
 static void clamp_selected(const TrackList *list, int *selected)
@@ -213,11 +277,11 @@ static void clamp_selected(const TrackList *list, int *selected)
     }
 }
 
-static int handle_action(InputAction action, const TrackList *list, int *selected, int *playing, int *repeat_mode, int *running, char *message, size_t message_size)
+static int handle_action(InputAction action, const TrackList *list, int *selected, int *playing, int *repeat_mode, int *running, int debug, ShuffleHistory *shuffle_history, char *message, size_t message_size)
 {
     int save_needed = 0;
 
-    if (action != ACTION_NONE) {
+    if (debug && action != ACTION_NONE) {
         printf("Action=%d selected=%d tracks=%d\n", action, *selected, list->count);
     }
 
@@ -240,6 +304,7 @@ static int handle_action(InputAction action, const TrackList *list, int *selecte
         break;
     case ACTION_PLAY:
         *playing = play_selected(list, *selected, message, message_size);
+        shuffle_history_add(shuffle_history, *playing);
         save_needed = *playing >= 0;
         break;
     case ACTION_STOP:
@@ -254,10 +319,11 @@ static int handle_action(InputAction action, const TrackList *list, int *selecte
         break;
     case ACTION_SHUFFLE_PLAY:
         if (list->count > 0) {
-            int next = random_track_index(list, *playing >= 0 ? *playing : *selected);
+            int next = random_track_index(list, *playing >= 0 ? *playing : *selected, shuffle_history);
             if (next >= 0) {
                 *selected = next;
                 *playing = play_selected(list, *selected, message, message_size);
+                shuffle_history_add(shuffle_history, *playing);
                 save_needed = *playing >= 0;
             }
         } else {
@@ -274,6 +340,7 @@ static int handle_action(InputAction action, const TrackList *list, int *selecte
             (*selected)--;
             clamp_selected(list, selected);
             *playing = play_selected(list, *selected, message, message_size);
+            shuffle_history_add(shuffle_history, *playing);
             save_needed = 1;
         }
         break;
@@ -282,6 +349,7 @@ static int handle_action(InputAction action, const TrackList *list, int *selecte
             (*selected)++;
             clamp_selected(list, selected);
             *playing = play_selected(list, *selected, message, message_size);
+            shuffle_history_add(shuffle_history, *playing);
             save_needed = 1;
         }
         break;
@@ -318,15 +386,19 @@ int main(int argc, char **argv)
     int selected = 0;
     int playing = -1;
     int repeat_mode = REPEAT_ALL;
+    int debug = 0;
     Uint32 last_log = 0;
+    Uint32 last_state_save = 0;
     Uint32 started_at = 0;
     Uint32 auto_quit_ms = 0;
     char message[128] = "";
     char state_path[TRACK_PATH_MAX];
     AppState saved_state;
+    ShuffleHistory shuffle_history;
 
     (void)argc;
 
+    memset(&shuffle_history, 0, sizeof(shuffle_history));
     setvbuf(stdout, NULL, _IONBF, 0);
     setvbuf(stderr, NULL, _IONBF, 0);
     printf("main start\n");
@@ -334,7 +406,8 @@ int main(int argc, char **argv)
     state_file_path(state_path, sizeof(state_path), argv && argv[0] ? argv[0] : NULL);
     load_state(state_path, &saved_state);
     repeat_mode = saved_state.repeat_mode;
-    printf("state file: %s saved_volume=%d\n", state_path, saved_state.volume);
+    debug = saved_state.debug;
+    printf("state file: %s saved_volume=%d debug=%d\n", state_path, saved_state.volume, debug);
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_JOYSTICK) != 0) {
         fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
@@ -342,6 +415,7 @@ int main(int argc, char **argv)
     }
 
     input_init();
+    input_set_debug(debug);
     printf("input init done\n");
 
     if (ui_init() != 0) {
@@ -366,6 +440,7 @@ int main(int argc, char **argv)
             if (resume_track >= 0) {
                 selected = resume_track;
                 playing = resume_selected(&list, selected, saved_state.elapsed_seconds, message, sizeof(message));
+                shuffle_history_add(&shuffle_history, playing);
             }
         }
     }
@@ -383,16 +458,18 @@ int main(int argc, char **argv)
         /* evdev thread input */
         {
             InputAction action = input_poll_joystick();
-            if (handle_action(action, &list, &selected, &playing, &repeat_mode, &running, message, sizeof(message))) {
-                save_state(state_path, &list, selected, playing, repeat_mode);
+            if (handle_action(action, &list, &selected, &playing, &repeat_mode, &running, debug, &shuffle_history, message, sizeof(message))) {
+                save_state(state_path, &list, selected, playing, repeat_mode, debug);
+                last_state_save = SDL_GetTicks();
             }
         }
 
         /* SDL event queue (keyboard fallback / SDL_QUIT) */
         while (SDL_PollEvent(&event)) {
             InputAction action = input_event_to_action(&event);
-            if (handle_action(action, &list, &selected, &playing, &repeat_mode, &running, message, sizeof(message))) {
-                save_state(state_path, &list, selected, playing, repeat_mode);
+            if (handle_action(action, &list, &selected, &playing, &repeat_mode, &running, debug, &shuffle_history, message, sizeof(message))) {
+                save_state(state_path, &list, selected, playing, repeat_mode, debug);
+                last_state_save = SDL_GetTicks();
             }
         }
 
@@ -400,6 +477,7 @@ int main(int argc, char **argv)
             if (repeat_mode == REPEAT_ONE) {
                 selected = playing;
                 playing = play_selected(&list, selected, message, sizeof(message));
+                shuffle_history_add(&shuffle_history, playing);
             } else if (repeat_mode == REPEAT_OFF && playing + 1 >= list.count) {
                 playing = -1;
                 snprintf(message, sizeof(message), "Finished");
@@ -407,17 +485,24 @@ int main(int argc, char **argv)
                 selected = playing + 1;
                 clamp_selected(&list, &selected);
                 playing = play_selected(&list, selected, message, sizeof(message));
+                shuffle_history_add(&shuffle_history, playing);
             }
-            save_state(state_path, &list, selected, playing, repeat_mode);
+            save_state(state_path, &list, selected, playing, repeat_mode, debug);
+            last_state_save = SDL_GetTicks();
         }
 
         if (audio_state() == AUDIO_STOPPED) {
             playing = -1;
         }
 
-        if (SDL_GetTicks() - last_log > 10000) {
+        if (debug && SDL_GetTicks() - last_log > 10000) {
             printf("Heartbeat selected=%d tracks=%d state=%d\n", selected, list.count, audio_state());
             last_log = SDL_GetTicks();
+        }
+
+        if (playing >= 0 && audio_state() != AUDIO_STOPPED && SDL_GetTicks() - last_state_save > 5000) {
+            save_state(state_path, &list, selected, playing, repeat_mode, debug);
+            last_state_save = SDL_GetTicks();
         }
 
         if (auto_quit_ms > 0 && SDL_GetTicks() - started_at > auto_quit_ms) {
@@ -429,7 +514,7 @@ int main(int argc, char **argv)
         SDL_Delay(33);
     }
 
-    save_state(state_path, &list, selected, playing, repeat_mode);
+    save_state(state_path, &list, selected, playing, repeat_mode, debug);
     audio_stop();
     ui_shutdown();
     input_shutdown();
