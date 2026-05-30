@@ -1,5 +1,6 @@
-garlic.img
-garlic-sysroot/
-build/
-dist/
-ref/
+/garlic.img
+/garlic-sysroot/
+/build/
+/dist/
+/ref/
+*.log
