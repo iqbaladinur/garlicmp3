@@ -2,13 +2,19 @@
 
 Minimal MP3 player for the original Anbernic RG35XX / RG35XX OG running GarlicOS 1.4.9.
 
+![Garlic MP3 Player screenshot](assets/GarlicMP3.png)
+
 - Standalone GarlicOS APPS launcher.
 - SDL 1.2 UI and joystick input, patched specifically for RG35XX hardware.
 - MP3 playback through a bundled static `mpg123` subprocess.
 - Music scan from `Roms/MUSIC` (SD2), `Roms/APPS/GarlicMP3/MUSIC`, or `/mnt/mmc/MUSIC`.
-- ID3 title/artist display with filename fallback, sorted by folder.
-- Favorites saved in `favorites.cfg` beside the app.
-- Recent tracks saved in `recent.cfg`; optional defaults can be set in `config.cfg`.
+- Folder-sorted library with one-level subdirectory scanning.
+- ID3v2/ID3v1 title and artist display, with cleaned filename fallback.
+- Repeat off/all/one, shuffle, pause/resume, previous/next track, and volume control.
+- Favorites with favorites-only playback mode, saved in `favorites.cfg` beside the app.
+- Recent track navigation saved in `recent.cfg`.
+- Resume state saved in `state.cfg`, including selected track, active track, elapsed time, repeat mode, favorites-only mode, debug flag, and volume.
+- Optional startup defaults through `config.cfg`.
 - No GarlicOS 2, MuOS, Knulli, RG35XX Plus/H/2024, or H700 assumptions.
 
 ## Build (recommended)
