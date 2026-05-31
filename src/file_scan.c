@@ -37,6 +37,14 @@ static unsigned int syncsafe_u32(const unsigned char *p)
            (unsigned int)(p[3] & 0x7f);
 }
 
+static unsigned int normal_u32(const unsigned char *p)
+{
+    return ((unsigned int)p[0] << 24) |
+           ((unsigned int)p[1] << 16) |
+           ((unsigned int)p[2] << 8) |
+           (unsigned int)p[3];
+}
+
 static int bitrate_kbps(int version_id, int layer_id, int bitrate_index)
 {
     static const int mpeg1_l3[16] = {0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0};
@@ -242,7 +250,7 @@ static void clean_display_name(char *out, size_t out_size, const char *name)
     }
 }
 
-static void copy_id3_text(char *out, size_t out_size, const unsigned char *src, size_t src_size)
+static void copy_clean_text(char *out, size_t out_size, const unsigned char *src, size_t src_size)
 {
     size_t start = 0;
     size_t end = src_size;
@@ -280,6 +288,146 @@ static void copy_id3_text(char *out, size_t out_size, const unsigned char *src, 
     out[j] = '\0';
 }
 
+static void copy_id3v2_text(char *out, size_t out_size, const unsigned char *src, size_t src_size)
+{
+    size_t i;
+    size_t j = 0;
+    unsigned char encoding;
+    int last_space = 1;
+
+    if (!out || out_size == 0) {
+        return;
+    }
+    out[0] = '\0';
+    if (!src || src_size <= 1) {
+        return;
+    }
+
+    encoding = src[0];
+    src++;
+    src_size--;
+
+    if (encoding == 1 || encoding == 2) {
+        if (src_size >= 2 &&
+            ((src[0] == 0xff && src[1] == 0xfe) || (src[0] == 0xfe && src[1] == 0xff))) {
+            src += 2;
+            src_size -= 2;
+        }
+        for (i = 0; i + 1 < src_size && j + 1 < out_size; i += 2) {
+            unsigned char c = src[i];
+            if (src[i] == 0 && src[i + 1] != 0) {
+                c = src[i + 1];
+            }
+            if (c < 32 || c > 126) {
+                c = ' ';
+            }
+            if (isspace(c)) {
+                if (!last_space) {
+                    out[j++] = ' ';
+                }
+                last_space = 1;
+            } else {
+                out[j++] = (char)c;
+                last_space = 0;
+            }
+        }
+        while (j > 0 && out[j - 1] == ' ') {
+            j--;
+        }
+        out[j] = '\0';
+        return;
+    }
+
+    copy_clean_text(out, out_size, src, src_size);
+}
+
+static int read_id3v2_display_name(const char *path, char *out, size_t out_size)
+{
+    FILE *fp;
+    unsigned char header[10];
+    unsigned char frame_header[10];
+    unsigned int tag_size;
+    unsigned int offset = 10;
+    int version;
+    char title[96] = "";
+    char artist[96] = "";
+
+    if (!out || out_size == 0) {
+        return 0;
+    }
+    out[0] = '\0';
+
+    fp = fopen(path, "rb");
+    if (!fp) {
+        return 0;
+    }
+    if (fread(header, 1, sizeof(header), fp) != sizeof(header) || memcmp(header, "ID3", 3) != 0) {
+        fclose(fp);
+        return 0;
+    }
+
+    version = header[3];
+    if (version < 3 || version > 4) {
+        fclose(fp);
+        return 0;
+    }
+
+    tag_size = syncsafe_u32(&header[6]);
+    while (offset + sizeof(frame_header) <= tag_size + 10 && offset < 65536) {
+        unsigned int frame_size;
+        unsigned char *data;
+
+        if (fseek(fp, (long)offset, SEEK_SET) != 0 ||
+            fread(frame_header, 1, sizeof(frame_header), fp) != sizeof(frame_header)) {
+            break;
+        }
+        if (frame_header[0] == 0) {
+            break;
+        }
+
+        frame_size = version == 4 ? syncsafe_u32(&frame_header[4]) : normal_u32(&frame_header[4]);
+        if (frame_size == 0 || offset + 10 + frame_size > tag_size + 10) {
+            break;
+        }
+        if (frame_size > 4096) {
+            offset += 10 + frame_size;
+            continue;
+        }
+
+        data = (unsigned char *)malloc(frame_size);
+        if (!data) {
+            break;
+        }
+        if (fread(data, 1, frame_size, fp) != frame_size) {
+            free(data);
+            break;
+        }
+
+        if (memcmp(frame_header, "TIT2", 4) == 0) {
+            copy_id3v2_text(title, sizeof(title), data, frame_size);
+        } else if (memcmp(frame_header, "TPE1", 4) == 0) {
+            copy_id3v2_text(artist, sizeof(artist), data, frame_size);
+        }
+
+        free(data);
+        if (title[0] && artist[0]) {
+            break;
+        }
+        offset += 10 + frame_size;
+    }
+
+    fclose(fp);
+    if (title[0] && artist[0]) {
+        snprintf(out, out_size, "%s - %s", artist, title);
+        return 1;
+    }
+    if (title[0]) {
+        snprintf(out, out_size, "%s", title);
+        return 1;
+    }
+    return 0;
+}
+
 static int read_id3v1_display_name(const char *path, char *out, size_t out_size)
 {
     FILE *fp;
@@ -306,8 +454,8 @@ static int read_id3v1_display_name(const char *path, char *out, size_t out_size)
         return 0;
     }
 
-    copy_id3_text(title, sizeof(title), tag + 3, 30);
-    copy_id3_text(artist, sizeof(artist), tag + 33, 30);
+    copy_clean_text(title, sizeof(title), tag + 3, 30);
+    copy_clean_text(artist, sizeof(artist), tag + 33, 30);
 
     if (title[0] && artist[0]) {
         snprintf(out, out_size, "%s - %s", artist, title);
@@ -318,6 +466,28 @@ static int read_id3v1_display_name(const char *path, char *out, size_t out_size)
     }
 
     return 1;
+}
+
+static void folder_display_name(char *out, size_t out_size, const char *dir)
+{
+    const char *name;
+
+    if (!out || out_size == 0) {
+        return;
+    }
+    out[0] = '\0';
+    if (!dir || !dir[0]) {
+        snprintf(out, out_size, "MUSIC");
+        return;
+    }
+
+    name = strrchr(dir, '/');
+    name = name && name[1] ? name + 1 : dir;
+    if (strcmp(name, ".") == 0 || strcmp(name, "MUSIC") == 0) {
+        snprintf(out, out_size, "MUSIC");
+    } else {
+        clean_display_name(out, out_size, name);
+    }
 }
 
 static void add_track(TrackList *list, const char *dir, const char *name)
@@ -339,7 +509,9 @@ static void add_track(TrackList *list, const char *dir, const char *name)
         return;
     }
     snprintf(track->name, sizeof(track->name), "%s", name);
-    if (!read_id3v1_display_name(track->path, track->display_name, sizeof(track->display_name))) {
+    folder_display_name(track->folder, sizeof(track->folder), dir);
+    if (!read_id3v2_display_name(track->path, track->display_name, sizeof(track->display_name)) &&
+        !read_id3v1_display_name(track->path, track->display_name, sizeof(track->display_name))) {
         clean_display_name(track->display_name, sizeof(track->display_name), name);
     }
     track->duration_seconds = estimate_mp3_duration(track->path);
@@ -383,7 +555,11 @@ static int cmp_track(const void *a, const void *b)
 {
     const Track *ta = (const Track *)a;
     const Track *tb = (const Track *)b;
-    return strcasecmp(ta->name, tb->name);
+    int folder_cmp = strcasecmp(ta->folder, tb->folder);
+    if (folder_cmp != 0) {
+        return folder_cmp;
+    }
+    return strcasecmp(ta->display_name, tb->display_name);
 }
 
 static void app_music_dir(char *out, size_t out_size, const char *argv0)

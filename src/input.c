@@ -8,6 +8,8 @@ static int hat_latched = 0;
 static InputAction hat_hold_action = ACTION_NONE;
 static Uint32 hat_next_repeat = 0;
 static int input_debug = 0;
+static int select_held = 0;
+static int select_combo_used = 0;
 
 #define HAT_REPEAT_DELAY_MS 360
 #define HAT_REPEAT_RATE_MS 95
@@ -90,17 +92,31 @@ InputAction input_poll_joystick(void)
 
 static InputAction button_action(int button, int pressed)
 {
+    if (button == SDL_BTN_SELECT) {
+        if (pressed) {
+            select_held = 1;
+            select_combo_used = 0;
+            return ACTION_NONE;
+        }
+        select_held = 0;
+        return select_combo_used ? ACTION_NONE : ACTION_REPEAT_TOGGLE;
+    }
+
     if (!pressed) return ACTION_NONE;
 
     switch (button) {
     case SDL_BTN_A:      return ACTION_PLAY;
     case SDL_BTN_B:      return ACTION_STOP;
-    case SDL_BTN_X:
-    case SDL_BTN_Y:      return ACTION_PAUSE;
+    case SDL_BTN_X:      return ACTION_PAUSE;
+    case SDL_BTN_Y:
+        if (select_held) {
+            select_combo_used = 1;
+            return ACTION_FAVORITES_ONLY_TOGGLE;
+        }
+        return ACTION_FAVORITE_TOGGLE;
     case SDL_BTN_L:
     case SDL_BTN_L2:     return ACTION_VOL_DOWN;
     case SDL_BTN_R:      return ACTION_VOL_UP;
-    case SDL_BTN_SELECT: return ACTION_REPEAT_TOGGLE;
     case SDL_BTN_START:  return ACTION_SHUFFLE_PLAY;
     case SDL_BTN_MENU:   return ACTION_QUIT;
     case SDL_BTN_VOL_UP: return ACTION_VOL_UP;
@@ -144,17 +160,35 @@ InputAction input_event_to_action(const SDL_Event *event)
 
         hat_latched = 1;
         if (val & SDL_HAT_UP) {
-            hat_hold_action = ACTION_UP;
+            hat_hold_action = select_held ? ACTION_FOLDER_PREV : ACTION_UP;
+            if (select_held) {
+                select_combo_used = 1;
+            }
             hat_next_repeat = SDL_GetTicks() + HAT_REPEAT_DELAY_MS;
-            return ACTION_UP;
+            return hat_hold_action;
         }
         if (val & SDL_HAT_DOWN) {
-            hat_hold_action = ACTION_DOWN;
+            hat_hold_action = select_held ? ACTION_FOLDER_NEXT : ACTION_DOWN;
+            if (select_held) {
+                select_combo_used = 1;
+            }
             hat_next_repeat = SDL_GetTicks() + HAT_REPEAT_DELAY_MS;
-            return ACTION_DOWN;
+            return hat_hold_action;
         }
-        if (val & SDL_HAT_LEFT)  return ACTION_PREV;
-        if (val & SDL_HAT_RIGHT) return ACTION_NEXT;
+        if (val & SDL_HAT_LEFT) {
+            if (select_held) {
+                select_combo_used = 1;
+                return ACTION_RECENT_PREV;
+            }
+            return ACTION_PREV;
+        }
+        if (val & SDL_HAT_RIGHT) {
+            if (select_held) {
+                select_combo_used = 1;
+                return ACTION_RECENT_NEXT;
+            }
+            return ACTION_NEXT;
+        }
         return ACTION_NONE;
     }
 

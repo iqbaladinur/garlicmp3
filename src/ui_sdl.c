@@ -466,7 +466,7 @@ void ui_shutdown(void)
     screen = NULL;
 }
 
-void ui_render(const TrackList *list, int selected, int playing, AudioState state, int elapsed_seconds, int volume, const char *repeat_label, const char *message)
+void ui_render(const TrackList *list, int selected, int playing, AudioState state, int elapsed_seconds, int volume, const char *repeat_label, int favorites_only, const char *message)
 {
     int i;
     int first = 0;
@@ -511,6 +511,9 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
     draw_text_scaled(38, 52, "Garlic MP3", fg, 10, 2);
     draw_text_right(594, 49, state_label(state), muted, 12);
     draw_text(38, 74, repeat_label ? repeat_label : "Repeat All", muted, 14);
+    if (favorites_only) {
+        draw_text(158, 74, "Favorites", hi, 12);
+    }
 
     if (list->count == 0) {
         fill_round_rect(42, 108, 556, 252, 14, panel_shadow);
@@ -561,7 +564,7 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
                 fill_round_rect(50, y - 5, 356, 18, 7, hi);
             }
 
-            snprintf(line, sizeof(line), "%03d %s", idx + 1, list->tracks[idx].display_name);
+            snprintf(line, sizeof(line), "%03d%c %s", idx + 1, list->tracks[idx].favorite ? '+' : ' ', list->tracks[idx].display_name);
             if (idx == playing) {
                 draw_text(54, y, ">", row_color, 1);
             }
@@ -583,7 +586,13 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
     } else {
         draw_text(54, 385, "Ready", hi, 10);
     }
-    draw_text(54, 405, "A Play B Stop X/Y Pause Sel Repeat", muted, 47);
+    if (list->count > 0 && selected >= 0 && selected < list->count && list->tracks[selected].folder[0]) {
+        char selected_folder[96];
+        snprintf(selected_folder, sizeof(selected_folder), "Folder: %s", list->tracks[selected].folder);
+        draw_marquee_text(54, 405, selected_folder, muted, 47, 0);
+    } else {
+        draw_text(54, 405, "A Play B Stop X Pause Y Fav Sel+Y Filter", muted, 47);
+    }
     draw_volume_bar(468, 385, 92, 8, volume, fg, rgb(60, 70, 80), hi);
     draw_text(38, 440, "Menu to quit", muted, 32);
     SDL_UnlockSurface(screen);

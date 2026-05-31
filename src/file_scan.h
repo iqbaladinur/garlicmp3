@@ -8,8 +8,10 @@
 typedef struct Track {
     char path[TRACK_PATH_MAX];
     char name[TRACK_NAME_MAX];
+    char folder[TRACK_NAME_MAX];
     char display_name[TRACK_NAME_MAX];
     int duration_seconds;
+    int favorite;
 } Track;
 
 typedef struct TrackList {

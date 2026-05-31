@@ -19,6 +19,8 @@ static time_t pause_started_at = 0;
 static int paused_seconds = 0;
 static int stopping = 0;
 static int finished = 0;
+static int volume_step = 5;
+static char last_error[128] = "";
 
 #define SYS_VOLUME_MAX 40
 
@@ -112,6 +114,7 @@ static int audio_play_internal(const char *path, int start_seconds)
     int skip_frames = 0;
 
     if (!path || !path[0]) {
+        snprintf(last_error, sizeof(last_error), "No audio path");
         return -1;
     }
 
@@ -128,6 +131,7 @@ static int audio_play_internal(const char *path, int start_seconds)
     player_pid = fork();
     if (player_pid < 0) {
         perror("fork");
+        snprintf(last_error, sizeof(last_error), "Cannot fork mpg123");
         player_pid = -1;
         state = AUDIO_STOPPED;
         return -1;
@@ -149,9 +153,11 @@ static int audio_play_internal(const char *path, int start_seconds)
         /* mpg123 exited within 100ms — failed to start */
         printf("audio_play: mpg123 exited immediately\n");
         fflush(stdout);
+        snprintf(last_error, sizeof(last_error), "mpg123 failed to start");
         return -1;
     }
 
+    last_error[0] = '\0';
     state = AUDIO_PLAYING;
     play_started_at = time(NULL) - start_seconds;
     pause_started_at = 0;
@@ -232,6 +238,7 @@ static int read_sys_volume(void)
 
     if (!fp) {
         perror("volume read");
+        snprintf(last_error, sizeof(last_error), "Cannot read system volume");
         return value;
     }
 
@@ -256,23 +263,25 @@ static void write_sys_volume(int value)
     fp = fopen("/sys/class/volume/value", "w");
     if (!fp) {
         perror("volume write");
+        snprintf(last_error, sizeof(last_error), "Cannot write system volume");
         return;
     }
 
     fprintf(fp, "%d\n", value);
     fclose(fp);
+    last_error[0] = '\0';
     printf("volume=%d\n", value);
     fflush(stdout);
 }
 
 void audio_volume_down(void)
 {
-    write_sys_volume(read_sys_volume() - 5);
+    write_sys_volume(read_sys_volume() - volume_step);
 }
 
 void audio_volume_up(void)
 {
-    write_sys_volume(read_sys_volume() + 5);
+    write_sys_volume(read_sys_volume() + volume_step);
 }
 
 int audio_get_volume(void)
@@ -283,4 +292,20 @@ int audio_get_volume(void)
 void audio_set_volume(int value)
 {
     write_sys_volume(value);
+}
+
+void audio_set_volume_step(int value)
+{
+    if (value < 1) {
+        value = 1;
+    }
+    if (value > 20) {
+        value = 20;
+    }
+    volume_step = value;
+}
+
+const char *audio_last_error(void)
+{
+    return last_error;
 }

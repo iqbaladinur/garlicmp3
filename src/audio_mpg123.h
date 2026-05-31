@@ -15,6 +15,8 @@ void audio_volume_down(void);
 void audio_volume_up(void);
 int audio_get_volume(void);
 void audio_set_volume(int value);
+void audio_set_volume_step(int value);
+const char *audio_last_error(void);
 AudioState audio_state(void);
 void audio_poll(void);
 int audio_elapsed_seconds(void);

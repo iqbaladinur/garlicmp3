@@ -6,6 +6,9 @@ Minimal MP3 player for the original Anbernic RG35XX / RG35XX OG running GarlicOS
 - SDL 1.2 UI and joystick input, patched specifically for RG35XX hardware.
 - MP3 playback through a bundled static `mpg123` subprocess.
 - Music scan from `Roms/MUSIC` (SD2), `Roms/APPS/GarlicMP3/MUSIC`, or `/mnt/mmc/MUSIC`.
+- ID3 title/artist display with filename fallback, sorted by folder.
+- Favorites saved in `favorites.cfg` beside the app.
+- Recent tracks saved in `recent.cfg`; optional defaults can be set in `config.cfg`.
 - No GarlicOS 2, MuOS, Knulli, RG35XX Plus/H/2024, or H700 assumptions.
 
 ## Build (recommended)
@@ -76,13 +79,37 @@ GarlicOS build simple.
 | Button | Action |
 |--------|--------|
 | D-pad Up/Down | Select track |
+| D-pad Left/Right | Previous / Next track |
 | A | Play selected |
 | B | Stop |
-| START | Pause / Resume |
-| L / R | Previous / Next track |
-| X / Y | Volume down / up |
-| SELECT + START | Quit |
+| X | Pause / Resume |
+| Y | Toggle favorite |
+| L / L2 | Volume down |
+| R | Volume up |
+| SELECT | Toggle repeat mode |
+| SELECT + Y | Toggle favorites-only mode |
+| SELECT + D-pad Up/Down | Previous / next folder |
+| SELECT + D-pad Left/Right | Previous / next recent track |
+| START | Shuffle play |
 | MENU | Quit |
+
+When favorites-only mode is enabled, list navigation and auto-advance skip
+non-favorite tracks. `START` shuffles favorites when favorites-only mode is on or
+when the selected track is a favorite; otherwise it shuffles all tracks.
+
+## Optional Config
+
+Create `Roms/APPS/GarlicMP3/config.cfg` to override startup defaults:
+
+```text
+repeat_mode=1
+favorites_only=0
+debug=0
+volume_step=5
+```
+
+Runtime state is still saved in `state.cfg`, so the most recent app state takes
+priority after the first run.
 
 ## Troubleshooting
 
@@ -90,6 +117,7 @@ GarlicOS build simple.
 - **App launches then returns immediately**: check `Roms/APPS/GarlicMP3/garlic-mp3.log`.
 - **UI opens but no sound**: verify `mpg123` exists in the app folder and is executable.
 - **No MP3 files shown**: only `.mp3` files are scanned; check music folder paths above.
+- **Track names look wrong**: the app uses ID3v2/ID3v1 title and artist when available; otherwise it cleans up the filename.
 - **Volume does not change**: the app writes `/sys/class/volume/value`; check `garlic-mp3.log` for `volume=` output.
 - **Controls wrong**: press the button and check `garlic-mp3.log` for `JOY unknown btn=X`, then update `src/input.c`.
 
