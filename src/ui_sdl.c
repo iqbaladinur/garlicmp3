@@ -429,6 +429,19 @@ static void draw_progress_bar(int x, int y, int w, int h, int elapsed, int durat
     }
 }
 
+static void format_bitrate_label(int bitrate_kbps, int vbr, char *out, size_t out_size)
+{
+    if (bitrate_kbps <= 0) {
+        out[0] = '\0';
+        return;
+    }
+    if (vbr) {
+        snprintf(out, out_size, "VBR");
+    } else {
+        snprintf(out, out_size, "%dK", bitrate_kbps);
+    }
+}
+
 static const char *state_label(AudioState state)
 {
     switch (state) {
@@ -564,6 +577,7 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
             int idx = first + i;
             int y = 122 + i * 17;
             char line[96];
+            char bitrate_label[8];
             Uint32 row_color = idx == selected ? hi_text : fg;
 
             if (idx == selected) {
@@ -575,9 +589,13 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
                 draw_text(54, y, ">", row_color, 1);
             }
             if (idx == selected) {
-                draw_marquee_text(70, y, line, hi_text, 40, 1);
+                draw_marquee_text(70, y, line, hi_text, 33, 1);
             } else {
-                draw_text(70, y, line, fg, 40);
+                draw_text(70, y, line, fg, 33);
+            }
+            format_bitrate_label(list->tracks[idx].bitrate_kbps, list->tracks[idx].vbr, bitrate_label, sizeof(bitrate_label));
+            if (bitrate_label[0]) {
+                draw_text_right(406, y, bitrate_label, row_color, 6);
             }
         }
     }
