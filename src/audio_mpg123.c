@@ -383,8 +383,12 @@ static int audio_play_internal(const char *path, int start_seconds)
         if (send_cmd("LOADPAUSED %s", path) != 0) {
             return -1;
         }
-        send_cmd("JUMP %ds", start_seconds);
-        send_cmd("PAUSE"); /* unpause */
+        if (send_cmd("JUMP %ds", start_seconds) != 0) {
+            return -1;
+        }
+        if (send_cmd("PAUSE") != 0) { /* unpause */
+            return -1;
+        }
     } else {
         if (send_cmd("LOAD %s", path) != 0) {
             return -1;
