@@ -82,6 +82,27 @@ SD2:/Roms/APPS/GarlicMP3/assets/background.bmp
 Use uncompressed BMP. PNG/JPG are intentionally not supported yet to keep the
 GarlicOS build simple.
 
+Note the main UI panel covers nearly the whole screen, so the background is
+only visible as a thin colored border/glow around the edges and corners —
+by design, not a bug.
+
+### Bundled theme backgrounds
+
+`assets/themes/` ships five ready-made 640x480 BMPs. Pick one and copy it to
+`assets/background.bmp` (renaming it) to use it:
+
+| Theme | Look |
+|-------|------|
+| `sunset.bmp` | warm orange-to-pink gradient |
+| `ocean.bmp` | cool teal-to-blue gradient |
+| `forest.bmp` | dark green with amber accents |
+| `midnight.bmp` | neutral dark navy/indigo (closest to the built-in default) |
+| `synthwave.bmp` | deep purple-to-magenta |
+
+```sh
+cp assets/themes/ocean.bmp assets/background.bmp
+```
+
 ## Controls
 
 | Button | Action |
