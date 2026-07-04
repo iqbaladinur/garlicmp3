@@ -550,13 +550,6 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
         snprintf(eq_line, sizeof(eq_line), "EQ: %s", eq_label);
         draw_text(262, 74, eq_line, muted, 16);
     }
-    {
-        char clock_label[8];
-        format_clock_label(clock_label, sizeof(clock_label));
-        if (clock_label[0]) {
-            draw_text_right(594, 74, clock_label, muted, 5);
-        }
-    }
 
     if (list->count == 0) {
         fill_round_rect(42, 108, 556, 252, 14, panel_shadow);
@@ -644,6 +637,13 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
     }
     draw_volume_bar(468, 385, 92, 8, volume, fg, rgb(60, 70, 80), hi);
     draw_text(38, 440, "Menu to quit", muted, 32);
+    {
+        char clock_label[8];
+        format_clock_label(clock_label, sizeof(clock_label));
+        if (clock_label[0]) {
+            draw_text_right(594, 440, clock_label, muted, 5);
+        }
+    }
     SDL_UnlockSurface(screen);
     SDL_Flip(screen);
 }
@@ -689,13 +689,6 @@ void ui_render_settings(const Settings *settings, AudioState state, const char *
 
     draw_text_scaled(38, 52, "Settings", fg, 10, 2);
     draw_text_right(594, 49, state_label(state), muted, 12);
-    {
-        char clock_label[8];
-        format_clock_label(clock_label, sizeof(clock_label));
-        if (clock_label[0]) {
-            draw_text_right(594, 74, clock_label, muted, 5);
-        }
-    }
 
     fill_round_rect(42, 108, 556, 252, 14, panel_shadow);
     fill_round_rect(38, 104, 556, 252, 14, border);
@@ -743,6 +736,13 @@ void ui_render_settings(const Settings *settings, AudioState state, const char *
         draw_text(54, 385, "Up-Down select  Left-Right change", muted, 47);
     }
     draw_text(54, 405, "B or R2 to close", muted, 47);
+    {
+        char clock_label[8];
+        format_clock_label(clock_label, sizeof(clock_label));
+        if (clock_label[0]) {
+            draw_text_right(594, 405, clock_label, muted, 5);
+        }
+    }
     SDL_UnlockSurface(screen);
     SDL_Flip(screen);
 }
