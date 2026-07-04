@@ -87,6 +87,8 @@ test-host:
 	@mkdir -p build
 	$(HOST_CC) $(HOST_CFLAGS) -o build/test_settings tests/test_settings.c src/settings.c
 	./build/test_settings
+	$(HOST_CC) $(HOST_CFLAGS) -o build/test_audio tests/test_audio.c src/audio_mpg123.c
+	./build/test_audio
 
 clean:
 	rm -rf build dist

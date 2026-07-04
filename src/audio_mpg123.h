@@ -7,6 +7,8 @@ typedef enum AudioState {
     AUDIO_PAUSED
 } AudioState;
 
+int audio_init(void);
+void audio_shutdown(void);
 int audio_play(const char *path);
 int audio_play_from_seconds(const char *path, int seconds);
 void audio_stop(void);
@@ -16,10 +18,24 @@ void audio_volume_up(void);
 int audio_get_volume(void);
 void audio_set_volume(int value);
 void audio_set_volume_step(int value);
+void audio_set_eq(int bass_tenths, int mid_tenths, int treble_tenths);
+void audio_set_rva(int on);
 const char *audio_last_error(void);
 AudioState audio_state(void);
 void audio_poll(void);
 int audio_elapsed_seconds(void);
+int audio_duration_seconds(void);
 int audio_take_finished(void);
+int audio_headroom_volume_pct(int bass_tenths, int mid_tenths, int treble_tenths);
+
+/* Test hooks: drive the event parser directly, no mpg123 process needed. */
+void audio_test_reset(void);
+void audio_test_begin_track(void);
+void audio_test_handle_line(const char *line);
+AudioState audio_test_get_state(void);
+int audio_test_get_finished(void);
+void audio_test_clear_finished(void);
+int audio_test_get_elapsed(void);
+int audio_test_get_duration(void);
 
 #endif
