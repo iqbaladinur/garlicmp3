@@ -6,14 +6,16 @@ Minimal MP3 player for the original Anbernic RG35XX / RG35XX OG running GarlicOS
 
 - Standalone GarlicOS APPS launcher.
 - SDL 1.2 UI and joystick input, patched specifically for RG35XX hardware.
-- MP3 playback through a bundled static `mpg123` subprocess.
+- MP3 playback through a single persistent `mpg123 -R` remote-control process: gapless track changes, clean pause/resume, accurate elapsed/duration (VBR included) and precise resume.
+- 3-band equalizer (bass/mid/treble) with presets (Flat, Bass Boost, Bass+Treble, Vocal, Rock, Custom), ReplayGain (`RVA mix`) normalization toggle, and automatic anti-clipping headroom.
+- Separate Settings screen on the R2 button (or Select+A): Up/Down selects, Left/Right adjusts, B closes; changes apply live and persist in `state.cfg`.
 - Music scan from `Roms/MUSIC` (SD2), `Roms/APPS/GarlicMP3/MUSIC`, or `/mnt/mmc/MUSIC`.
 - Folder-sorted library with one-level subdirectory scanning.
 - ID3v2/ID3v1 title and artist display, with cleaned filename fallback.
 - Repeat off/all/one, shuffle, pause/resume, previous/next track, and volume control.
 - Favorites with favorites-only playback mode, saved in `favorites.cfg` beside the app.
 - Recent track navigation saved in `recent.cfg`.
-- Resume state saved in `state.cfg`, including selected track, active track, elapsed time, repeat mode, favorites-only mode, debug flag, and volume.
+- Resume state saved in `state.cfg`, including selected track, active track, elapsed time, repeat mode, favorites-only mode, debug flag, volume, equalizer preset/bands, and RVA mode.
 - Optional startup defaults through `config.cfg`.
 - No GarlicOS 2, MuOS, Knulli, RG35XX Plus/H/2024, or H700 assumptions.
 
