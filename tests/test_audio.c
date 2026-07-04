@@ -59,9 +59,11 @@ static void test_error_marks_track_finished_once(void)
 
 static void test_headroom(void)
 {
+    /* Geometric partial compensation (100/sqrt(max/10)): a boosted band
+     * stays genuinely louder than flat instead of being fully canceled out. */
     assert(audio_headroom_volume_pct(10, 10, 10) == 100);
-    assert(audio_headroom_volume_pct(16, 10, 10) == 62);
-    assert(audio_headroom_volume_pct(20, 20, 20) == 50);
+    assert(audio_headroom_volume_pct(16, 10, 10) == 79);
+    assert(audio_headroom_volume_pct(20, 20, 20) == 71);
     assert(audio_headroom_volume_pct(5, 8, 10) == 100);
 }
 

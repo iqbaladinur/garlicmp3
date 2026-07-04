@@ -38,6 +38,16 @@ static int rva_on = 0;
 
 int audio_headroom_volume_pct(int bass_tenths, int mid_tenths, int treble_tenths)
 {
+    /* Geometric partial compensation: volume_pct = 100 / sqrt(max_tenths / 10),
+     * precomputed for max_tenths 10..20 to avoid a libm dependency on the
+     * device build. Full compensation (100 / (max/10)) would cancel almost
+     * all of a boosted band's audible effect; this halves the attenuation in
+     * dB terms, so a boosted band is still genuinely louder than flat while
+     * the loudest band's peak overshoot stays capped (worst case ~+3dB at
+     * EQ_BAND_MAX). Index is (max_tenths - 10), clamped to 0..10. */
+    static const int headroom_pct[11] = {
+        100, 95, 91, 88, 85, 82, 79, 77, 75, 73, 71
+    };
     int max = bass_tenths;
 
     if (mid_tenths > max) {
@@ -49,7 +59,10 @@ int audio_headroom_volume_pct(int bass_tenths, int mid_tenths, int treble_tenths
     if (max <= 10) {
         return 100;
     }
-    return 1000 / max;
+    if (max > 20) {
+        max = 20;
+    }
+    return headroom_pct[max - 10];
 }
 
 static void close_pipes(void)
