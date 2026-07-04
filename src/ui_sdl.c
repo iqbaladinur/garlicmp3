@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #define SCREEN_W 640
 #define SCREEN_H 480
@@ -442,6 +443,20 @@ static void format_bitrate_label(int bitrate_kbps, int vbr, char *out, size_t ou
     }
 }
 
+static void format_clock_label(char *out, size_t out_size)
+{
+    time_t now;
+    struct tm *local_tm;
+
+    now = time(NULL);
+    local_tm = localtime(&now);
+    if (!local_tm) {
+        out[0] = '\0';
+        return;
+    }
+    snprintf(out, out_size, "%02d:%02d", local_tm->tm_hour, local_tm->tm_min);
+}
+
 static const char *state_label(AudioState state)
 {
     switch (state) {
@@ -531,6 +546,13 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
         char eq_line[24];
         snprintf(eq_line, sizeof(eq_line), "EQ: %s", eq_label);
         draw_text(262, 74, eq_line, muted, 16);
+    }
+    {
+        char clock_label[8];
+        format_clock_label(clock_label, sizeof(clock_label));
+        if (clock_label[0]) {
+            draw_text_right(594, 74, clock_label, muted, 5);
+        }
     }
 
     if (list->count == 0) {
@@ -664,6 +686,13 @@ void ui_render_settings(const Settings *settings, AudioState state, const char *
 
     draw_text_scaled(38, 52, "Settings", fg, 10, 2);
     draw_text_right(594, 49, state_label(state), muted, 12);
+    {
+        char clock_label[8];
+        format_clock_label(clock_label, sizeof(clock_label));
+        if (clock_label[0]) {
+            draw_text_right(594, 74, clock_label, muted, 5);
+        }
+    }
 
     fill_round_rect(42, 108, 556, 252, 14, panel_shadow);
     fill_round_rect(38, 104, 556, 252, 14, border);
