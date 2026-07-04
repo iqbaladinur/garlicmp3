@@ -160,7 +160,7 @@ static void load_config(const char *path, AppConfig *config)
     config->repeat_mode = REPEAT_ALL;
     config->debug = 0;
     config->favorites_only = 0;
-    config->volume_step = 5;
+    config->volume_step = 2;
     config->eq_preset = EQ_PRESET_FLAT;
     config->eq_bass = 10;
     config->eq_mid = 10;

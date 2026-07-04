@@ -113,7 +113,7 @@ Create `Roms/APPS/GarlicMP3/config.cfg` to override startup defaults:
 repeat_mode=1
 favorites_only=0
 debug=0
-volume_step=5
+volume_step=2
 ```
 
 Runtime state is still saved in `state.cfg`, so the most recent app state takes

@@ -393,6 +393,7 @@ static void draw_volume_bar(int x, int y, int w, int h, int volume, Uint32 fg, U
 {
     char label[16];
     int fill_w;
+    int pct;
 
     if (volume < 0) {
         volume = 0;
@@ -401,8 +402,10 @@ static void draw_volume_bar(int x, int y, int w, int h, int volume, Uint32 fg, U
         volume = UI_VOLUME_MAX;
     }
 
-    snprintf(label, sizeof(label), "VOL %02d", volume);
-    draw_text(x, y, label, fg, 8);
+    /* No '%' glyph in the bitmap font; a bare 0-100 number reads as percent. */
+    pct = (volume * 100 + UI_VOLUME_MAX / 2) / UI_VOLUME_MAX;
+    snprintf(label, sizeof(label), "VOL %d", pct);
+    draw_text(x, y, label, fg, 10);
     fill_round_rect(x, y + 18, w, h, 4, muted);
     fill_w = (w * volume) / UI_VOLUME_MAX;
     if (fill_w > 0) {
