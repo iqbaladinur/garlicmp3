@@ -466,7 +466,7 @@ void ui_shutdown(void)
     screen = NULL;
 }
 
-void ui_render(const TrackList *list, int selected, int playing, AudioState state, int elapsed_seconds, int volume, const char *repeat_label, int favorites_only, const char *message)
+void ui_render(const TrackList *list, int selected, int playing, AudioState state, int elapsed_seconds, int duration_seconds, int volume, const char *repeat_label, const char *eq_label, int favorites_only, const char *message)
 {
     int i;
     int first = 0;
@@ -514,6 +514,11 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
     if (favorites_only) {
         draw_text(158, 74, "Favorites", hi, 12);
     }
+    if (eq_label && eq_label[0]) {
+        char eq_line[24];
+        snprintf(eq_line, sizeof(eq_line), "EQ: %s", eq_label);
+        draw_text(262, 74, eq_line, muted, 16);
+    }
 
     if (list->count == 0) {
         fill_round_rect(42, 108, 556, 252, 14, panel_shadow);
@@ -548,7 +553,8 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
         draw_marquee_text(454, 300, now_title, muted, 16, state == AUDIO_PLAYING || state == AUDIO_PAUSED);
         {
             char time_label[32];
-            int duration = playing >= 0 && playing < list->count ? list->tracks[playing].duration_seconds : 0;
+            int duration = duration_seconds > 0 ? duration_seconds :
+                (playing >= 0 && playing < list->count ? list->tracks[playing].duration_seconds : 0);
             format_time_pair(elapsed_seconds, duration, time_label, sizeof(time_label));
             draw_text(454, 324, time_label, fg, 16);
             draw_progress_bar(454, 340, 120, 4, elapsed_seconds, duration, rgb(60, 70, 80), hi_text);
@@ -591,10 +597,102 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
         snprintf(selected_folder, sizeof(selected_folder), "Folder: %s", list->tracks[selected].folder);
         draw_marquee_text(54, 405, selected_folder, muted, 47, 0);
     } else {
-        draw_text(54, 405, "A Play B Stop X Pause Y Fav Sel+Y Filter", muted, 47);
+        draw_text(54, 405, "A Play B Stop X Pause Y Fav R2 Settings", muted, 47);
     }
     draw_volume_bar(468, 385, 92, 8, volume, fg, rgb(60, 70, 80), hi);
     draw_text(38, 440, "Menu to quit", muted, 32);
+    SDL_UnlockSurface(screen);
+    SDL_Flip(screen);
+}
+
+void ui_render_settings(const Settings *settings, AudioState state, const char *message)
+{
+    int i;
+    Uint32 shell;
+    Uint32 screen_bg;
+    Uint32 border;
+    Uint32 fg;
+    Uint32 muted;
+    Uint32 hi;
+    Uint32 hi_text;
+    Uint32 info_bg;
+    Uint32 panel_shadow;
+
+    if (!screen) {
+        return;
+    }
+
+    shell = rgb(18, 22, 27);
+    screen_bg = rgb(30, 36, 43);
+    border = rgb(76, 88, 100);
+    fg = rgb(235, 241, 246);
+    muted = rgb(151, 163, 174);
+    hi = rgb(33, 145, 226);
+    hi_text = rgb(252, 254, 255);
+    info_bg = rgb(24, 30, 36);
+    panel_shadow = rgb(7, 10, 13);
+
+    if (background) {
+        SDL_BlitSurface(background, NULL, screen, NULL);
+    }
+    SDL_LockSurface(screen);
+    if (!background) {
+        draw_fallback_background();
+    }
+
+    fill_round_rect(18, 14, SCREEN_W - 36, SCREEN_H - 28, 18, panel_shadow);
+    fill_round_rect(22, 18, SCREEN_W - 44, SCREEN_H - 36, 16, shell);
+    draw_equalizer_bg(state);
+
+    draw_text_scaled(38, 52, "Settings", fg, 10, 2);
+    draw_text_right(594, 49, state_label(state), muted, 12);
+
+    fill_round_rect(42, 108, 556, 252, 14, panel_shadow);
+    fill_round_rect(38, 104, 556, 252, 14, border);
+    fill_round_rect(40, 106, 552, 248, 12, screen_bg);
+
+    for (i = 0; i < SETTINGS_ITEM_COUNT; i++) {
+        int y = 132 + i * 44;
+        char value[24];
+        Uint32 row_color = i == settings->cursor ? hi_text : fg;
+
+        if (i == settings->cursor) {
+            fill_round_rect(52, y - 10, 528, 32, 8, hi);
+        }
+        draw_text(72, y, settings_item_name(i), row_color, 24);
+
+        switch (i) {
+        case SETTINGS_ITEM_PRESET:
+            snprintf(value, sizeof(value), "%s", settings_preset_name(settings->preset));
+            break;
+        case SETTINGS_ITEM_BASS:
+            snprintf(value, sizeof(value), "%d.%d", settings->bass_t / 10, settings->bass_t % 10);
+            break;
+        case SETTINGS_ITEM_MID:
+            snprintf(value, sizeof(value), "%d.%d", settings->mid_t / 10, settings->mid_t % 10);
+            break;
+        case SETTINGS_ITEM_TREBLE:
+            snprintf(value, sizeof(value), "%d.%d", settings->treble_t / 10, settings->treble_t % 10);
+            break;
+        case SETTINGS_ITEM_RVA:
+            snprintf(value, sizeof(value), "%s", settings->rva ? "On" : "Off");
+            break;
+        default:
+            value[0] = '\0';
+            break;
+        }
+        draw_text_right(560, y, value, row_color, 16);
+    }
+
+    fill_round_rect(42, 370, 556, 66, 13, panel_shadow);
+    fill_round_rect(38, 366, 556, 66, 13, border);
+    fill_round_rect(40, 368, 552, 62, 11, info_bg);
+    if (message && message[0]) {
+        draw_marquee_text(54, 385, message, hi, 47, 1);
+    } else {
+        draw_text(54, 385, "Up-Down select  Left-Right change", muted, 47);
+    }
+    draw_text(54, 405, "B or R2 to close", muted, 47);
     SDL_UnlockSurface(screen);
     SDL_Flip(screen);
 }

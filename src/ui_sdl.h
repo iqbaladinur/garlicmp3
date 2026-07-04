@@ -3,11 +3,13 @@
 
 #include "audio_mpg123.h"
 #include "file_scan.h"
+#include "settings.h"
 
 #include <SDL/SDL.h>
 
 int ui_init(void);
 void ui_shutdown(void);
-void ui_render(const TrackList *list, int selected, int playing, AudioState state, int elapsed_seconds, int volume, const char *repeat_label, int favorites_only, const char *message);
+void ui_render(const TrackList *list, int selected, int playing, AudioState state, int elapsed_seconds, int duration_seconds, int volume, const char *repeat_label, const char *eq_label, int favorites_only, const char *message);
+void ui_render_settings(const Settings *settings, AudioState state, const char *message);
 
 #endif
