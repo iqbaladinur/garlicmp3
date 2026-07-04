@@ -90,5 +90,11 @@ test-host:
 	$(HOST_CC) $(HOST_CFLAGS) -o build/test_audio tests/test_audio.c src/audio_mpg123.c
 	./build/test_audio
 
+.PHONY: test-integration
+test-integration:
+	@mkdir -p build
+	$(HOST_CC) $(HOST_CFLAGS) -o build/test_audio_integration tests/test_audio_integration.c src/audio_mpg123.c
+	./build/test_audio_integration
+
 clean:
 	rm -rf build dist
