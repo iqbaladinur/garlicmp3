@@ -912,7 +912,43 @@ static int handle_action(InputAction action, TrackList *list, int *selected, int
     return save_needed;
 }
 
-static int handle_settings_action(InputAction action, Settings *settings, int *screen, char *message, size_t message_size)
+static void settings_value_message(const Settings *s, char *buf, size_t n)
+{
+    switch (s->cursor) {
+    case SETTINGS_ITEM_REPEAT:
+        snprintf(buf, n, "Repeat: %s", repeat_label(s->repeat_mode));
+        break;
+    case SETTINGS_ITEM_FAVORITES_ONLY:
+        snprintf(buf, n, "Favorites only: %s", s->favorites_only ? "On" : "Off");
+        break;
+    case SETTINGS_ITEM_VOLUME_STEP:
+        snprintf(buf, n, "Volume step: %d", s->volume_step);
+        break;
+    case SETTINGS_ITEM_PRESET:
+        snprintf(buf, n, "EQ: %s", settings_preset_name(s->preset));
+        break;
+    case SETTINGS_ITEM_BASS:
+        snprintf(buf, n, "Bass: %d.%d", s->bass_t / 10, s->bass_t % 10);
+        break;
+    case SETTINGS_ITEM_MID:
+        snprintf(buf, n, "Mid: %d.%d", s->mid_t / 10, s->mid_t % 10);
+        break;
+    case SETTINGS_ITEM_TREBLE:
+        snprintf(buf, n, "Treble: %d.%d", s->treble_t / 10, s->treble_t % 10);
+        break;
+    case SETTINGS_ITEM_RVA:
+        snprintf(buf, n, "Normalize (RVA): %s", s->rva ? "On" : "Off");
+        break;
+    case SETTINGS_ITEM_DEBUG:
+        snprintf(buf, n, "Debug logging: %s", s->debug ? "On" : "Off");
+        break;
+    default:
+        buf[0] = '\0';
+        break;
+    }
+}
+
+static int handle_settings_action(InputAction action, Settings *settings, int *screen, int *repeat_mode, int *favorites_only, int *debug, char *message, size_t message_size)
 {
     switch (action) {
     case ACTION_UP:
@@ -926,7 +962,11 @@ static int handle_settings_action(InputAction action, Settings *settings, int *s
         if (settings_adjust(settings, action == ACTION_NEXT ? 1 : -1)) {
             audio_set_eq(settings->bass_t, settings->mid_t, settings->treble_t);
             audio_set_rva(settings->rva);
-            snprintf(message, message_size, "EQ: %s", settings_preset_name(settings->preset));
+            audio_set_volume_step(settings->volume_step);
+            *repeat_mode = settings->repeat_mode;
+            *favorites_only = settings->favorites_only;
+            *debug = settings->debug;
+            settings_value_message(settings, message, message_size);
             return 1;
         }
         return 0;
@@ -943,7 +983,7 @@ static int handle_settings_action(InputAction action, Settings *settings, int *s
     }
 }
 
-static int dispatch_action(InputAction action, int *screen, Settings *settings, TrackList *list, int *selected, int *playing, int *repeat_mode, int *favorites_only, int *running, int debug, ShuffleHistory *shuffle_history, RecentList *recent, const char *favorites_path, const char *recent_path, char *message, size_t message_size)
+static int dispatch_action(InputAction action, int *screen, Settings *settings, TrackList *list, int *selected, int *playing, int *repeat_mode, int *favorites_only, int *running, int *debug, ShuffleHistory *shuffle_history, RecentList *recent, const char *favorites_path, const char *recent_path, char *message, size_t message_size)
 {
     if (action == ACTION_SETTINGS_TOGGLE) {
         *screen = *screen == SCREEN_SETTINGS ? SCREEN_LIBRARY : SCREEN_SETTINGS;
@@ -956,8 +996,13 @@ static int dispatch_action(InputAction action, int *screen, Settings *settings, 
         return 0;
     }
     if (*screen == SCREEN_SETTINGS) {
-        int handled = handle_settings_action(action, settings, screen, message, message_size);
+        int handled = handle_settings_action(action, settings, screen, repeat_mode, favorites_only, debug, message, message_size);
         if (handled >= 0) {
+            if (*favorites_only && favorite_count(list) <= 0) {
+                *favorites_only = 0;
+                settings->favorites_only = 0;
+                snprintf(message, message_size, "No favorites yet");
+            }
             return handled;
         }
     }
@@ -969,7 +1014,7 @@ static int dispatch_action(InputAction action, int *screen, Settings *settings, 
         }
         return 0; /* consume everything else while help is open */
     }
-    return handle_action(action, list, selected, playing, repeat_mode, favorites_only, running, debug, shuffle_history, recent, favorites_path, recent_path, message, message_size);
+    return handle_action(action, list, selected, playing, repeat_mode, favorites_only, running, *debug, shuffle_history, recent, favorites_path, recent_path, message, message_size);
 }
 
 int main(int argc, char **argv)
@@ -1023,9 +1068,13 @@ int main(int argc, char **argv)
         settings.treble_t = saved_state.eq_treble >= 0 ? saved_state.eq_treble : config.eq_treble;
     }
     settings.rva = saved_state.rva >= 0 ? saved_state.rva : config.rva;
-    audio_set_volume_step(config.volume_step);
+    settings.repeat_mode = repeat_mode;
+    settings.favorites_only = favorites_only;
+    settings.volume_step = config.volume_step;
+    settings.debug = debug;
+    audio_set_volume_step(settings.volume_step);
     printf("state file: %s favorites file: %s recent file: %s config file: %s saved_volume=%d debug=%d favorites_only=%d volume_step=%d\n",
-           state_path, favorites_path, recent_path, config_path, saved_state.volume, debug, favorites_only, config.volume_step);
+           state_path, favorites_path, recent_path, config_path, saved_state.volume, debug, favorites_only, settings.volume_step);
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_JOYSTICK) != 0) {
         fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
@@ -1087,7 +1136,7 @@ int main(int argc, char **argv)
         /* evdev thread input */
         {
             InputAction action = input_poll_joystick();
-            if (dispatch_action(action, &screen, &settings, &list, &selected, &playing, &repeat_mode, &favorites_only, &running, debug, &shuffle_history, &recent, favorites_path, recent_path, message, sizeof(message))) {
+            if (dispatch_action(action, &screen, &settings, &list, &selected, &playing, &repeat_mode, &favorites_only, &running, &debug, &shuffle_history, &recent, favorites_path, recent_path, message, sizeof(message))) {
                 save_state(state_path, &list, selected, playing, repeat_mode, debug, favorites_only, &settings);
                 last_state_save = SDL_GetTicks();
             }
@@ -1096,7 +1145,7 @@ int main(int argc, char **argv)
         /* SDL event queue (keyboard fallback / SDL_QUIT) */
         while (SDL_PollEvent(&event)) {
             InputAction action = input_event_to_action(&event);
-            if (dispatch_action(action, &screen, &settings, &list, &selected, &playing, &repeat_mode, &favorites_only, &running, debug, &shuffle_history, &recent, favorites_path, recent_path, message, sizeof(message))) {
+            if (dispatch_action(action, &screen, &settings, &list, &selected, &playing, &repeat_mode, &favorites_only, &running, &debug, &shuffle_history, &recent, favorites_path, recent_path, message, sizeof(message))) {
                 save_state(state_path, &list, selected, playing, repeat_mode, debug, favorites_only, &settings);
                 last_state_save = SDL_GetTicks();
             }

@@ -658,6 +658,7 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
 void ui_render_settings(const Settings *settings, AudioState state, const char *message)
 {
     int i;
+    int y = 116;
     Uint32 shell;
     Uint32 screen_bg;
     Uint32 border;
@@ -665,7 +666,6 @@ void ui_render_settings(const Settings *settings, AudioState state, const char *
     Uint32 muted;
     Uint32 hi;
     Uint32 hi_text;
-    Uint32 info_bg;
     Uint32 panel_shadow;
 
     if (!screen) {
@@ -679,7 +679,6 @@ void ui_render_settings(const Settings *settings, AudioState state, const char *
     muted = rgb(151, 163, 174);
     hi = rgb(33, 145, 226);
     hi_text = rgb(252, 254, 255);
-    info_bg = rgb(24, 30, 36);
     panel_shadow = rgb(7, 10, 13);
 
     if (background) {
@@ -697,21 +696,33 @@ void ui_render_settings(const Settings *settings, AudioState state, const char *
     draw_text_scaled(38, 52, "Settings", fg, 10, 2);
     draw_text_right(594, 49, state_label(state), muted, 12);
 
-    fill_round_rect(42, 108, 556, 252, 14, panel_shadow);
-    fill_round_rect(38, 104, 556, 252, 14, border);
-    fill_round_rect(40, 106, 552, 248, 12, screen_bg);
+    fill_round_rect(42, 100, 556, 330, 14, panel_shadow);
+    fill_round_rect(38, 96, 556, 330, 14, border);
+    fill_round_rect(40, 98, 552, 326, 12, screen_bg);
 
     for (i = 0; i < SETTINGS_ITEM_COUNT; i++) {
-        int y = 132 + i * 44;
         char value[24];
         Uint32 row_color = i == settings->cursor ? hi_text : fg;
 
+        if (settings_section_start(i)) {
+            draw_text(56, y, settings_section_name(i), muted, 24);
+            y += 20;
+        }
         if (i == settings->cursor) {
             fill_round_rect(52, y - 10, 528, 32, 8, hi);
         }
         draw_text(72, y, settings_item_name(i), row_color, 24);
 
         switch (i) {
+        case SETTINGS_ITEM_REPEAT:
+            snprintf(value, sizeof(value), "%s", settings_repeat_name(settings->repeat_mode));
+            break;
+        case SETTINGS_ITEM_FAVORITES_ONLY:
+            snprintf(value, sizeof(value), "%s", settings->favorites_only ? "On" : "Off");
+            break;
+        case SETTINGS_ITEM_VOLUME_STEP:
+            snprintf(value, sizeof(value), "%d", settings->volume_step);
+            break;
         case SETTINGS_ITEM_PRESET:
             snprintf(value, sizeof(value), "%s", settings_preset_name(settings->preset));
             break;
@@ -727,22 +738,23 @@ void ui_render_settings(const Settings *settings, AudioState state, const char *
         case SETTINGS_ITEM_RVA:
             snprintf(value, sizeof(value), "%s", settings->rva ? "On" : "Off");
             break;
+        case SETTINGS_ITEM_DEBUG:
+            snprintf(value, sizeof(value), "%s", settings->debug ? "On" : "Off");
+            break;
         default:
             value[0] = '\0';
             break;
         }
         draw_text_right(560, y, value, row_color, 16);
+        y += 28;
     }
 
-    fill_round_rect(42, 370, 556, 66, 13, panel_shadow);
-    fill_round_rect(38, 366, 556, 66, 13, border);
-    fill_round_rect(40, 368, 552, 62, 11, info_bg);
+    fill_round_rect(42, 438, 556, 22, 8, panel_shadow);
     if (message && message[0]) {
-        draw_marquee_text(54, 385, message, hi, 47, 1);
+        draw_marquee_text(52, 442, message, hi, 46, 1);
     } else {
-        draw_text(54, 385, "Up-Down select  Left-Right change", muted, 47);
+        draw_text(52, 442, "Up-Down select  Left-Right change  B close", muted, 47);
     }
-    draw_text(54, 405, "B or R2 to close", muted, 47);
     SDL_UnlockSurface(screen);
     SDL_Flip(screen);
 }
