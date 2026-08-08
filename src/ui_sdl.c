@@ -743,13 +743,6 @@ void ui_render_settings(const Settings *settings, AudioState state, const char *
         draw_text(54, 385, "Up-Down select  Left-Right change", muted, 47);
     }
     draw_text(54, 405, "B or R2 to close", muted, 47);
-    {
-        char clock_label[8];
-        format_clock_label(clock_label, sizeof(clock_label));
-        if (clock_label[0]) {
-            draw_text_right(594, 405, clock_label, muted, 5);
-        }
-    }
     SDL_UnlockSurface(screen);
     SDL_Flip(screen);
 }
