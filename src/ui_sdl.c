@@ -640,6 +640,11 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
     draw_volume_bar(468, 385, 92, 8, volume, fg, rgb(60, 70, 80), hi);
     draw_text(38, 440, "Menu to quit", muted, 32);
     {
+        char version_label[48];
+        snprintf(version_label, sizeof(version_label), "v%s (%s)", GARLICMP3_VERSION, GARLICMP3_GIT_HASH);
+        draw_text(38 + 13 * CHAR_W, 440, version_label, muted, 32);
+    }
+    {
         char clock_label[8];
         format_clock_label(clock_label, sizeof(clock_label));
         if (clock_label[0]) {
@@ -738,11 +743,6 @@ void ui_render_settings(const Settings *settings, AudioState state, const char *
         draw_text(54, 385, "Up-Down select  Left-Right change", muted, 47);
     }
     draw_text(54, 405, "B or R2 to close", muted, 47);
-    {
-        char version_label[48];
-        snprintf(version_label, sizeof(version_label), "v%s (%s)", GARLICMP3_VERSION, GARLICMP3_GIT_HASH);
-        draw_text(54, 428, version_label, muted, 20);
-    }
     {
         char clock_label[8];
         format_clock_label(clock_label, sizeof(clock_label));
