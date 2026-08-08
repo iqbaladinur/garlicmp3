@@ -26,7 +26,8 @@ enum {
     SDL_BTN_START  = 8,
     SDL_BTN_MENU   = 9,
     SDL_BTN_VOL_UP = 10,
-    SDL_BTN_VOL_DOWN = 11
+    SDL_BTN_VOL_DOWN = 11,
+    SDL_BTN_R2     = 12 /* tentative: verify with debug=1 on device */
 };
 
 void input_init(void)
@@ -105,7 +106,12 @@ static InputAction button_action(int button, int pressed)
     if (!pressed) return ACTION_NONE;
 
     switch (button) {
-    case SDL_BTN_A:      return ACTION_PLAY;
+    case SDL_BTN_A:
+        if (select_held) {
+            select_combo_used = 1;
+            return ACTION_SETTINGS_TOGGLE;
+        }
+        return ACTION_PLAY;
     case SDL_BTN_B:      return ACTION_STOP;
     case SDL_BTN_X:      return ACTION_PAUSE;
     case SDL_BTN_Y:
@@ -121,6 +127,7 @@ static InputAction button_action(int button, int pressed)
     case SDL_BTN_MENU:   return ACTION_QUIT;
     case SDL_BTN_VOL_UP: return ACTION_VOL_UP;
     case SDL_BTN_VOL_DOWN: return ACTION_VOL_DOWN;
+    case SDL_BTN_R2:     return ACTION_SETTINGS_TOGGLE;
     default:
         if (input_debug) {
             printf("JOY unknown btn=%d\n", button);

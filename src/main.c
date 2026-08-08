@@ -1,6 +1,7 @@
 #include "audio_mpg123.h"
 #include "file_scan.h"
 #include "input.h"
+#include "settings.h"
 #include "ui_sdl.h"
 
 #include <SDL/SDL.h>
@@ -22,6 +23,11 @@ typedef struct AppState {
     int repeat_mode;
     int debug;
     int favorites_only;
+    int eq_preset;
+    int eq_bass;
+    int eq_mid;
+    int eq_treble;
+    int rva;
 } AppState;
 
 typedef struct AppConfig {
@@ -29,6 +35,11 @@ typedef struct AppConfig {
     int debug;
     int favorites_only;
     int volume_step;
+    int eq_preset;
+    int eq_bass;
+    int eq_mid;
+    int eq_treble;
+    int rva;
 } AppConfig;
 
 typedef struct RecentList {
@@ -48,6 +59,11 @@ typedef enum RepeatMode {
     REPEAT_ALL = 1,
     REPEAT_ONE = 2
 } RepeatMode;
+
+enum {
+    SCREEN_LIBRARY = 0,
+    SCREEN_SETTINGS
+};
 
 static void state_file_path(char *out, size_t out_size, const char *argv0)
 {
@@ -144,7 +160,12 @@ static void load_config(const char *path, AppConfig *config)
     config->repeat_mode = REPEAT_ALL;
     config->debug = 0;
     config->favorites_only = 0;
-    config->volume_step = 5;
+    config->volume_step = 2;
+    config->eq_preset = EQ_PRESET_FLAT;
+    config->eq_bass = 10;
+    config->eq_mid = 10;
+    config->eq_treble = 10;
+    config->rva = 0;
 
     fp = fopen(path, "r");
     if (!fp) {
@@ -169,6 +190,19 @@ static void load_config(const char *path, AppConfig *config)
             } else if (config->volume_step > 20) {
                 config->volume_step = 20;
             }
+        } else if (strncmp(line, "eq_preset=", 10) == 0) {
+            config->eq_preset = atoi(line + 10);
+            if (config->eq_preset < 0 || config->eq_preset >= EQ_PRESET_COUNT) {
+                config->eq_preset = EQ_PRESET_FLAT;
+            }
+        } else if (strncmp(line, "eq_bass=", 8) == 0) {
+            config->eq_bass = settings_clamp_band(atoi(line + 8));
+        } else if (strncmp(line, "eq_mid=", 7) == 0) {
+            config->eq_mid = settings_clamp_band(atoi(line + 7));
+        } else if (strncmp(line, "eq_treble=", 10) == 0) {
+            config->eq_treble = settings_clamp_band(atoi(line + 10));
+        } else if (strncmp(line, "rva=", 4) == 0) {
+            config->rva = atoi(line + 4) ? 1 : 0;
         }
     }
 
@@ -185,6 +219,11 @@ static void load_state(const char *path, AppState *state)
     state->repeat_mode = -1;
     state->debug = -1;
     state->favorites_only = -1;
+    state->eq_preset = -1;
+    state->eq_bass = -1;
+    state->eq_mid = -1;
+    state->eq_treble = -1;
+    state->rva = -1;
 
     fp = fopen(path, "r");
     if (!fp) {
@@ -212,13 +251,26 @@ static void load_state(const char *path, AppState *state)
             state->favorites_only = atoi(line + 15) ? 1 : 0;
         } else if (strncmp(line, "volume=", 7) == 0) {
             state->volume = atoi(line + 7);
+        } else if (strncmp(line, "eq_preset=", 10) == 0) {
+            state->eq_preset = atoi(line + 10);
+            if (state->eq_preset < 0 || state->eq_preset >= EQ_PRESET_COUNT) {
+                state->eq_preset = -1;
+            }
+        } else if (strncmp(line, "eq_bass=", 8) == 0) {
+            state->eq_bass = settings_clamp_band(atoi(line + 8));
+        } else if (strncmp(line, "eq_mid=", 7) == 0) {
+            state->eq_mid = settings_clamp_band(atoi(line + 7));
+        } else if (strncmp(line, "eq_treble=", 10) == 0) {
+            state->eq_treble = settings_clamp_band(atoi(line + 10));
+        } else if (strncmp(line, "rva=", 4) == 0) {
+            state->rva = atoi(line + 4) ? 1 : 0;
         }
     }
 
     fclose(fp);
 }
 
-static void save_state(const char *path, const TrackList *list, int selected, int playing, int repeat_mode, int debug, int favorites_only)
+static void save_state(const char *path, const TrackList *list, int selected, int playing, int repeat_mode, int debug, int favorites_only, const Settings *settings)
 {
     FILE *fp;
     AudioState state_now;
@@ -246,6 +298,11 @@ static void save_state(const char *path, const TrackList *list, int selected, in
     fprintf(fp, "debug=%d\n", debug ? 1 : 0);
     fprintf(fp, "favorites_only=%d\n", favorites_only ? 1 : 0);
     fprintf(fp, "volume=%d\n", audio_get_volume());
+    fprintf(fp, "eq_preset=%d\n", settings->preset);
+    fprintf(fp, "eq_bass=%d\n", settings->bass_t);
+    fprintf(fp, "eq_mid=%d\n", settings->mid_t);
+    fprintf(fp, "eq_treble=%d\n", settings->treble_t);
+    fprintf(fp, "rva=%d\n", settings->rva ? 1 : 0);
     fclose(fp);
 }
 
@@ -843,10 +900,6 @@ static int handle_action(InputAction action, TrackList *list, int *selected, int
         save_needed = 1;
         break;
     case ACTION_QUIT:
-        if (audio_state() == AUDIO_PLAYING) {
-            audio_pause_toggle();
-            snprintf(message, message_size, "Paused for resume");
-        }
         *running = 0;
         save_needed = 1;
         break;
@@ -855,6 +908,53 @@ static int handle_action(InputAction action, TrackList *list, int *selected, int
     }
 
     return save_needed;
+}
+
+static int handle_settings_action(InputAction action, Settings *settings, int *screen, char *message, size_t message_size)
+{
+    switch (action) {
+    case ACTION_UP:
+        settings_cursor_move(settings, -1);
+        return 0;
+    case ACTION_DOWN:
+        settings_cursor_move(settings, 1);
+        return 0;
+    case ACTION_PREV:
+    case ACTION_NEXT:
+        if (settings_adjust(settings, action == ACTION_NEXT ? 1 : -1)) {
+            audio_set_eq(settings->bass_t, settings->mid_t, settings->treble_t);
+            audio_set_rva(settings->rva);
+            snprintf(message, message_size, "EQ: %s", settings_preset_name(settings->preset));
+            return 1;
+        }
+        return 0;
+    case ACTION_STOP: /* B closes the menu */
+        *screen = SCREEN_LIBRARY;
+        return 0;
+    case ACTION_PAUSE:
+    case ACTION_VOL_DOWN:
+    case ACTION_VOL_UP:
+    case ACTION_QUIT:
+        return -1; /* pass through to the library handler */
+    default:
+        return 0; /* consume everything else while the menu is open */
+    }
+}
+
+static int dispatch_action(InputAction action, int *screen, Settings *settings, TrackList *list, int *selected, int *playing, int *repeat_mode, int *favorites_only, int *running, int debug, ShuffleHistory *shuffle_history, RecentList *recent, const char *favorites_path, const char *recent_path, char *message, size_t message_size)
+{
+    if (action == ACTION_SETTINGS_TOGGLE) {
+        *screen = *screen == SCREEN_SETTINGS ? SCREEN_LIBRARY : SCREEN_SETTINGS;
+        message[0] = '\0';
+        return 0;
+    }
+    if (*screen == SCREEN_SETTINGS) {
+        int handled = handle_settings_action(action, settings, screen, message, message_size);
+        if (handled >= 0) {
+            return handled;
+        }
+    }
+    return handle_action(action, list, selected, playing, repeat_mode, favorites_only, running, debug, shuffle_history, recent, favorites_path, recent_path, message, message_size);
 }
 
 int main(int argc, char **argv)
@@ -867,6 +967,8 @@ int main(int argc, char **argv)
     int repeat_mode = REPEAT_ALL;
     int debug = 0;
     int favorites_only = 0;
+    int screen = SCREEN_LIBRARY;
+    Settings settings;
     Uint32 last_log = 0;
     Uint32 last_state_save = 0;
     Uint32 started_at = 0;
@@ -897,6 +999,14 @@ int main(int argc, char **argv)
     repeat_mode = saved_state.repeat_mode >= 0 ? saved_state.repeat_mode : config.repeat_mode;
     debug = saved_state.debug >= 0 ? saved_state.debug : config.debug;
     favorites_only = saved_state.favorites_only >= 0 ? saved_state.favorites_only : config.favorites_only;
+    settings_init(&settings);
+    settings_set_preset(&settings, saved_state.eq_preset >= 0 ? saved_state.eq_preset : config.eq_preset);
+    if (settings.preset == EQ_PRESET_CUSTOM) {
+        settings.bass_t = saved_state.eq_bass >= 0 ? saved_state.eq_bass : config.eq_bass;
+        settings.mid_t = saved_state.eq_mid >= 0 ? saved_state.eq_mid : config.eq_mid;
+        settings.treble_t = saved_state.eq_treble >= 0 ? saved_state.eq_treble : config.eq_treble;
+    }
+    settings.rva = saved_state.rva >= 0 ? saved_state.rva : config.rva;
     audio_set_volume_step(config.volume_step);
     printf("state file: %s favorites file: %s recent file: %s config file: %s saved_volume=%d debug=%d favorites_only=%d volume_step=%d\n",
            state_path, favorites_path, recent_path, config_path, saved_state.volume, debug, favorites_only, config.volume_step);
@@ -916,6 +1026,12 @@ int main(int argc, char **argv)
         return 1;
     }
     printf("ui init done\n");
+
+    if (audio_init() != 0) {
+        snprintf(message, sizeof(message), "%s", audio_last_error());
+    }
+    audio_set_eq(settings.bass_t, settings.mid_t, settings.treble_t);
+    audio_set_rva(settings.rva);
 
     scan_music(&list, argv && argv[0] ? argv[0] : NULL);
     load_favorites(favorites_path, &list);
@@ -955,8 +1071,8 @@ int main(int argc, char **argv)
         /* evdev thread input */
         {
             InputAction action = input_poll_joystick();
-            if (handle_action(action, &list, &selected, &playing, &repeat_mode, &favorites_only, &running, debug, &shuffle_history, &recent, favorites_path, recent_path, message, sizeof(message))) {
-                save_state(state_path, &list, selected, playing, repeat_mode, debug, favorites_only);
+            if (dispatch_action(action, &screen, &settings, &list, &selected, &playing, &repeat_mode, &favorites_only, &running, debug, &shuffle_history, &recent, favorites_path, recent_path, message, sizeof(message))) {
+                save_state(state_path, &list, selected, playing, repeat_mode, debug, favorites_only, &settings);
                 last_state_save = SDL_GetTicks();
             }
         }
@@ -964,8 +1080,8 @@ int main(int argc, char **argv)
         /* SDL event queue (keyboard fallback / SDL_QUIT) */
         while (SDL_PollEvent(&event)) {
             InputAction action = input_event_to_action(&event);
-            if (handle_action(action, &list, &selected, &playing, &repeat_mode, &favorites_only, &running, debug, &shuffle_history, &recent, favorites_path, recent_path, message, sizeof(message))) {
-                save_state(state_path, &list, selected, playing, repeat_mode, debug, favorites_only);
+            if (dispatch_action(action, &screen, &settings, &list, &selected, &playing, &repeat_mode, &favorites_only, &running, debug, &shuffle_history, &recent, favorites_path, recent_path, message, sizeof(message))) {
+                save_state(state_path, &list, selected, playing, repeat_mode, debug, favorites_only, &settings);
                 last_state_save = SDL_GetTicks();
             }
         }
@@ -975,7 +1091,7 @@ int main(int argc, char **argv)
             if (playing >= 0) {
                 record_recent(recent_path, &recent, list.tracks[playing].path);
             }
-            save_state(state_path, &list, selected, playing, repeat_mode, debug, favorites_only);
+            save_state(state_path, &list, selected, playing, repeat_mode, debug, favorites_only, &settings);
             last_state_save = SDL_GetTicks();
         }
 
@@ -989,7 +1105,7 @@ int main(int argc, char **argv)
         }
 
         if (playing >= 0 && audio_state() != AUDIO_STOPPED && SDL_GetTicks() - last_state_save > 5000) {
-            save_state(state_path, &list, selected, playing, repeat_mode, debug, favorites_only);
+            save_state(state_path, &list, selected, playing, repeat_mode, debug, favorites_only, &settings);
             last_state_save = SDL_GetTicks();
         }
 
@@ -998,12 +1114,16 @@ int main(int argc, char **argv)
             running = 0;
         }
 
-        ui_render(&list, selected, playing, audio_state(), audio_elapsed_seconds(), audio_get_volume(), repeat_label(repeat_mode), favorites_only, message);
+        if (screen == SCREEN_SETTINGS) {
+            ui_render_settings(&settings, audio_state(), message);
+        } else {
+            ui_render(&list, selected, playing, audio_state(), audio_elapsed_seconds(), audio_duration_seconds(), audio_get_volume(), repeat_label(repeat_mode), settings_preset_name(settings.preset), favorites_only, message);
+        }
         SDL_Delay(33);
     }
 
-    save_state(state_path, &list, selected, playing, repeat_mode, debug, favorites_only);
-    audio_stop();
+    save_state(state_path, &list, selected, playing, repeat_mode, debug, favorites_only, &settings);
+    audio_shutdown();
     ui_shutdown();
     input_shutdown();
     SDL_Quit();

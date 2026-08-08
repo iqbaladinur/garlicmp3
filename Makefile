@@ -28,6 +28,7 @@ SRCS := \
 	src/audio_mpg123.c \
 	src/file_scan.c \
 	src/input.c \
+	src/settings.c \
 	src/ui_sdl.c
 
 OBJS := $(SRCS:src/%.c=build/%.o)
@@ -77,6 +78,23 @@ docker-miyoo-dist:
 
 docker-rg35xx-dist:
 	sh scripts/build-rg35xx-docker.sh
+
+HOST_CC ?= cc
+HOST_CFLAGS ?= -std=c99 -Wall -Wextra -Isrc
+
+.PHONY: test-host
+test-host:
+	@mkdir -p build
+	$(HOST_CC) $(HOST_CFLAGS) -o build/test_settings tests/test_settings.c src/settings.c
+	./build/test_settings
+	$(HOST_CC) $(HOST_CFLAGS) -o build/test_audio tests/test_audio.c src/audio_mpg123.c
+	./build/test_audio
+
+.PHONY: test-integration
+test-integration:
+	@mkdir -p build
+	$(HOST_CC) $(HOST_CFLAGS) -o build/test_audio_integration tests/test_audio_integration.c src/audio_mpg123.c
+	./build/test_audio_integration
 
 clean:
 	rm -rf build dist

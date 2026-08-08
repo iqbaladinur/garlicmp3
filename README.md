@@ -6,14 +6,16 @@ Minimal MP3 player for the original Anbernic RG35XX / RG35XX OG running GarlicOS
 
 - Standalone GarlicOS APPS launcher.
 - SDL 1.2 UI and joystick input, patched specifically for RG35XX hardware.
-- MP3 playback through a bundled static `mpg123` subprocess.
+- MP3 playback through a single persistent `mpg123 -R` remote-control process: gapless track changes, clean pause/resume, accurate elapsed/duration (VBR included) and precise resume.
+- 3-band equalizer (bass/mid/treble) with presets (Flat, Bass Boost, Bass+Treble, Vocal, Rock, Custom), ReplayGain (`RVA mix`) normalization toggle, and automatic anti-clipping headroom.
+- Separate Settings screen on the R2 button (or Select+A): Up/Down selects, Left/Right adjusts, B closes; changes apply live and persist in `state.cfg`.
 - Music scan from `Roms/MUSIC` (SD2), `Roms/APPS/GarlicMP3/MUSIC`, or `/mnt/mmc/MUSIC`.
 - Folder-sorted library with one-level subdirectory scanning.
 - ID3v2/ID3v1 title and artist display, with cleaned filename fallback.
 - Repeat off/all/one, shuffle, pause/resume, previous/next track, and volume control.
 - Favorites with favorites-only playback mode, saved in `favorites.cfg` beside the app.
 - Recent track navigation saved in `recent.cfg`.
-- Resume state saved in `state.cfg`, including selected track, active track, elapsed time, repeat mode, favorites-only mode, debug flag, and volume.
+- Resume state saved in `state.cfg`, including selected track, active track, elapsed time, repeat mode, favorites-only mode, debug flag, volume, equalizer preset/bands, and RVA mode.
 - Optional startup defaults through `config.cfg`.
 - No GarlicOS 2, MuOS, Knulli, RG35XX Plus/H/2024, or H700 assumptions.
 
@@ -80,6 +82,27 @@ SD2:/Roms/APPS/GarlicMP3/assets/background.bmp
 Use uncompressed BMP. PNG/JPG are intentionally not supported yet to keep the
 GarlicOS build simple.
 
+Note the main UI panel covers nearly the whole screen, so the background is
+only visible as a thin colored border/glow around the edges and corners —
+by design, not a bug.
+
+### Bundled theme backgrounds
+
+`assets/themes/` ships five ready-made 640x480 BMPs. Pick one and copy it to
+`assets/background.bmp` (renaming it) to use it:
+
+| Theme | Look |
+|-------|------|
+| `sunset.bmp` | warm orange-to-pink gradient |
+| `ocean.bmp` | cool teal-to-blue gradient |
+| `forest.bmp` | dark green with amber accents |
+| `midnight.bmp` | neutral dark navy/indigo (closest to the built-in default) |
+| `synthwave.bmp` | deep purple-to-magenta |
+
+```sh
+cp assets/themes/ocean.bmp assets/background.bmp
+```
+
 ## Controls
 
 | Button | Action |
@@ -111,7 +134,7 @@ Create `Roms/APPS/GarlicMP3/config.cfg` to override startup defaults:
 repeat_mode=1
 favorites_only=0
 debug=0
-volume_step=5
+volume_step=2
 ```
 
 Runtime state is still saved in `state.cfg`, so the most recent app state takes

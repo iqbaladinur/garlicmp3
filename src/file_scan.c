@@ -91,7 +91,7 @@ static int read_u32_be(FILE *fp, long offset, unsigned int *out)
     return 1;
 }
 
-static int xing_duration(FILE *fp, long frame_offset, int version_id, int channel_mode, int sample_rate)
+static int xing_duration(FILE *fp, long frame_offset, int version_id, int channel_mode, int sample_rate, int *out_is_vbr)
 {
     long xing_offset;
     unsigned char tag[4];
@@ -119,11 +119,15 @@ static int xing_duration(FILE *fp, long frame_offset, int version_id, int channe
     if (!read_u32_be(fp, xing_offset + 8, &frames) || frames == 0 || sample_rate <= 0) {
         return 0;
     }
+    if (out_is_vbr) {
+        /* "Xing" marks a true VBR stream; "Info" is LAME's tag for CBR/ABR. */
+        *out_is_vbr = memcmp(tag, "Xing", 4) == 0 ? 1 : 0;
+    }
 
     return (int)(((unsigned long long)frames * (unsigned int)samples_per_frame + (unsigned int)sample_rate / 2) / (unsigned int)sample_rate);
 }
 
-static int estimate_mp3_duration(const char *path)
+static int estimate_mp3_duration(const char *path, int *out_bitrate_kbps, int *out_vbr)
 {
     FILE *fp;
     unsigned char h[10];
@@ -131,6 +135,13 @@ static int estimate_mp3_duration(const char *path)
     long offset = 0;
     long search_end;
     int duration = 0;
+
+    if (out_bitrate_kbps) {
+        *out_bitrate_kbps = 0;
+    }
+    if (out_vbr) {
+        *out_vbr = 0;
+    }
 
     fp = fopen(path, "rb");
     if (!fp) {
@@ -180,7 +191,15 @@ static int estimate_mp3_duration(const char *path)
             sample_rate = sample_rate_hz(version_id, sample_index);
 
             if (bitrate > 0 && sample_rate > 0) {
-                duration = xing_duration(fp, offset, version_id, channel_mode, sample_rate);
+                int is_vbr = 0;
+
+                if (out_bitrate_kbps) {
+                    *out_bitrate_kbps = bitrate;
+                }
+                duration = xing_duration(fp, offset, version_id, channel_mode, sample_rate, &is_vbr);
+                if (out_vbr) {
+                    *out_vbr = is_vbr;
+                }
                 if (duration <= 0) {
                     long audio_bytes = file_size - offset;
                     if (audio_bytes > 128) {
@@ -514,7 +533,7 @@ static void add_track(TrackList *list, const char *dir, const char *name)
         !read_id3v1_display_name(track->path, track->display_name, sizeof(track->display_name))) {
         clean_display_name(track->display_name, sizeof(track->display_name), name);
     }
-    track->duration_seconds = estimate_mp3_duration(track->path);
+    track->duration_seconds = estimate_mp3_duration(track->path, &track->bitrate_kbps, &track->vbr);
     list->count++;
 }
 

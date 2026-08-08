@@ -12,6 +12,8 @@ typedef struct Track {
     char display_name[TRACK_NAME_MAX];
     int duration_seconds;
     int favorite;
+    int bitrate_kbps;
+    int vbr;
 } Track;
 
 typedef struct TrackList {
