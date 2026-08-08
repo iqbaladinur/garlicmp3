@@ -47,7 +47,7 @@ docker run --rm \
 echo "Copying static mpg123 from Miyoo toolchain..."
 docker run --rm \
   -v "$PWD/dist/APPS/GarlicMP3:/out" \
-  "nfriedly/miyoo-toolchain:latest" \
+  "docker.io/nfriedly/miyoo-toolchain:latest" \
   sh -lc 'cp /opt/miyoo/arm-buildroot-linux-musleabi/sysroot/usr/bin/mpg123 /out/mpg123 && chmod +x /out/mpg123'
 
 echo "Done."
