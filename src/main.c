@@ -3,6 +3,7 @@
 #include "input.h"
 #include "settings.h"
 #include "ui_sdl.h"
+#include "version.h"
 
 #include <SDL/SDL.h>
 #include <stdio.h>
@@ -989,6 +990,7 @@ int main(int argc, char **argv)
     setvbuf(stdout, NULL, _IONBF, 0);
     setvbuf(stderr, NULL, _IONBF, 0);
     printf("main start\n");
+    printf("GarlicMP3 version %s (git %s)\n", GARLICMP3_VERSION, GARLICMP3_GIT_HASH);
     srand((unsigned int)time(NULL));
     state_file_path(state_path, sizeof(state_path), argv && argv[0] ? argv[0] : NULL);
     favorites_file_path(favorites_path, sizeof(favorites_path), argv && argv[0] ? argv[0] : NULL);

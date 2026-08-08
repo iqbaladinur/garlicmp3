@@ -19,7 +19,7 @@ SYSROOT_FLAGS := --sysroot=$(SYSROOT)
 endif
 
 CFLAGS ?= -std=c99 -Wall -Wextra -Os
-CPPFLAGS += $(SYSROOT_FLAGS) $(SDL_CFLAGS) -Isrc
+CPPFLAGS += $(SYSROOT_FLAGS) $(SDL_CFLAGS) -Isrc -DGARLICMP3_GIT_HASH=\"$(shell git rev-parse --short HEAD 2>/dev/null || echo dev)\"
 LDFLAGS += $(SYSROOT_FLAGS)
 LDLIBS += $(SDL_LIBS)
 
