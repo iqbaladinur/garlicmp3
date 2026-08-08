@@ -63,7 +63,8 @@ typedef enum RepeatMode {
 
 enum {
     SCREEN_LIBRARY = 0,
-    SCREEN_SETTINGS
+    SCREEN_SETTINGS,
+    SCREEN_HELP
 };
 
 static void state_file_path(char *out, size_t out_size, const char *argv0)
@@ -949,11 +950,24 @@ static int dispatch_action(InputAction action, int *screen, Settings *settings, 
         message[0] = '\0';
         return 0;
     }
+    if (action == ACTION_HELP_TOGGLE) {
+        *screen = *screen == SCREEN_HELP ? SCREEN_LIBRARY : SCREEN_HELP;
+        message[0] = '\0';
+        return 0;
+    }
     if (*screen == SCREEN_SETTINGS) {
         int handled = handle_settings_action(action, settings, screen, message, message_size);
         if (handled >= 0) {
             return handled;
         }
+    }
+    if (*screen == SCREEN_HELP) {
+        if (action == ACTION_STOP || action == ACTION_SETTINGS_TOGGLE || action == ACTION_HELP_TOGGLE) {
+            *screen = SCREEN_LIBRARY;
+            message[0] = '\0';
+            return 0;
+        }
+        return 0; /* consume everything else while help is open */
     }
     return handle_action(action, list, selected, playing, repeat_mode, favorites_only, running, debug, shuffle_history, recent, favorites_path, recent_path, message, message_size);
 }
@@ -1118,6 +1132,8 @@ int main(int argc, char **argv)
 
         if (screen == SCREEN_SETTINGS) {
             ui_render_settings(&settings, audio_state(), message);
+        } else if (screen == SCREEN_HELP) {
+            ui_render_help(audio_state());
         } else {
             ui_render(&list, selected, playing, audio_state(), audio_elapsed_seconds(), audio_duration_seconds(), audio_get_volume(), repeat_label(repeat_mode), settings_preset_name(settings.preset), favorites_only, message);
         }

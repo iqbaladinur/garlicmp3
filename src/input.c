@@ -123,7 +123,12 @@ static InputAction button_action(int button, int pressed)
     case SDL_BTN_L:
     case SDL_BTN_L2:     return ACTION_VOL_DOWN;
     case SDL_BTN_R:      return ACTION_VOL_UP;
-    case SDL_BTN_START:  return ACTION_SHUFFLE_PLAY;
+    case SDL_BTN_START:
+        if (select_held) {
+            select_combo_used = 1;
+            return ACTION_HELP_TOGGLE;
+        }
+        return ACTION_SHUFFLE_PLAY;
     case SDL_BTN_MENU:   return ACTION_QUIT;
     case SDL_BTN_VOL_UP: return ACTION_VOL_UP;
     case SDL_BTN_VOL_DOWN: return ACTION_VOL_DOWN;

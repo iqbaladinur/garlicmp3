@@ -746,3 +746,63 @@ void ui_render_settings(const Settings *settings, AudioState state, const char *
     SDL_UnlockSurface(screen);
     SDL_Flip(screen);
 }
+
+static const char *const help_rows[][2] = {
+    { "D-Pad Up/Down",   "Navigate / jump folders (Sel)" },
+    { "D-Pad L/R",       "Prev / next track" },
+    { "A",               "Play" },
+    { "B",               "Stop / close" },
+    { "X",               "Pause / resume" },
+    { "Y",               "Toggle favorite" },
+    { "Sel+Y",           "Favorites-only mode" },
+    { "Sel+Start",       "This help screen" },
+    { "R2 / Sel+A",      "Settings (EQ)" },
+    { "Start",           "Shuffle play" },
+    { "L / R",           "Volume down / up" },
+    { "Menu",            "Quit" },
+};
+
+void ui_render_help(AudioState state)
+{
+    int i;
+    Uint32 shell;
+    Uint32 fg;
+    Uint32 muted;
+    Uint32 hi;
+    Uint32 panel_shadow;
+
+    if (!screen) {
+        return;
+    }
+
+    shell = rgb(18, 22, 27);
+    fg = rgb(235, 241, 246);
+    muted = rgb(151, 163, 174);
+    hi = rgb(33, 145, 226);
+    panel_shadow = rgb(7, 10, 13);
+
+    if (background) {
+        SDL_BlitSurface(background, NULL, screen, NULL);
+    }
+    SDL_LockSurface(screen);
+    if (!background) {
+        draw_fallback_background();
+    }
+
+    fill_round_rect(18, 14, SCREEN_W - 36, SCREEN_H - 28, 18, panel_shadow);
+    fill_round_rect(22, 18, SCREEN_W - 44, SCREEN_H - 36, 16, shell);
+    draw_equalizer_bg(state);
+
+    draw_text_scaled(38, 52, "Help", fg, 10, 2);
+    draw_text_right(594, 49, state_label(state), muted, 12);
+
+    for (i = 0; i < (int)(sizeof(help_rows) / sizeof(help_rows[0])); i++) {
+        int y = 110 + i * 30;
+        draw_text(54, y, help_rows[i][0], hi, 24);
+        draw_text(200, y, help_rows[i][1], fg, 52);
+    }
+
+    draw_text(54, 405, "B or Select+Start to close", muted, 47);
+    SDL_UnlockSurface(screen);
+    SDL_Flip(screen);
+}
