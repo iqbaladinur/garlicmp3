@@ -113,7 +113,12 @@ static InputAction button_action(int button, int pressed)
         }
         return ACTION_PLAY;
     case SDL_BTN_B:      return ACTION_STOP;
-    case SDL_BTN_X:      return ACTION_PAUSE;
+    case SDL_BTN_X:
+        if (select_held) {
+            select_combo_used = 1;
+            return ACTION_VIEW_TOGGLE;
+        }
+        return ACTION_PAUSE;
     case SDL_BTN_Y:
         if (select_held) {
             select_combo_used = 1;
@@ -121,7 +126,6 @@ static InputAction button_action(int button, int pressed)
         }
         return ACTION_FAVORITE_TOGGLE;
     case SDL_BTN_L:      return ACTION_VOL_DOWN;
-    case SDL_BTN_L2:     return ACTION_VIEW_TOGGLE;
     case SDL_BTN_R:      return ACTION_VOL_UP;
     case SDL_BTN_START:
         if (select_held) {

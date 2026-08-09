@@ -8,7 +8,7 @@ Minimal MP3 player for the original Anbernic RG35XX / RG35XX OG running GarlicOS
 - SDL 1.2 UI and joystick input, patched specifically for RG35XX hardware.
 - MP3 playback through a single persistent `mpg123 -R` remote-control process: gapless track changes, clean pause/resume, accurate elapsed/duration (VBR included) and precise resume.
 - 3-band equalizer (bass/mid/treble) with presets (Flat, Bass Boost, Bass+Treble, Vocal, Rock, Custom), ReplayGain (`RVA mix`) normalization toggle, and automatic anti-clipping headroom.
-- Separate Settings screen on the R2 button (or Select+A): Up/Down selects, Left/Right adjusts, B closes; changes apply live and persist in `state.cfg`.
+- Separate Settings screen on Select+A: Up/Down selects, Left/Right adjusts, B closes; changes apply live and persist in `state.cfg`.
 - Music scan from `Roms/MUSIC` (SD2), `Roms/APPS/GarlicMP3/MUSIC`, or `/mnt/mmc/MUSIC`.
 - Folder-sorted library with one-level subdirectory scanning.
 - ID3v2/ID3v1 title and artist display, with cleaned filename fallback.
@@ -113,9 +113,10 @@ cp assets/themes/ocean.bmp assets/background.bmp
 | B | Stop |
 | X | Pause / Resume |
 | Y | Toggle favorite |
-| L / L2 | Volume down |
+| L | Volume down |
 | R | Volume up |
 | SELECT | Toggle repeat mode |
+| SELECT + X | Toggle track list / now playing view |
 | SELECT + Y | Toggle favorites-only mode |
 | SELECT + D-pad Up/Down | Previous / next folder |
 | SELECT + D-pad Left/Right | Previous / next recent track |
