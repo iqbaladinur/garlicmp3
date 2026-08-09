@@ -43,12 +43,17 @@ int main(void)
 
     init_list(&tl);
 
-    /* 1. Library screen, playing state, selected track 3 */
-    ui_render(&tl, 2, 3, AUDIO_PLAYING, 83, 296, 28, "Repeat All", "Rock", 0, "Ready");
+    /* 1. Library screen (track list full width), playing state, selected track 3 */
+    ui_render(&tl, 2, 3, AUDIO_PLAYING, 83, 296, 28, "Repeat All", "Rock", 0, "Ready", 0);
     SDL_SaveBMP(SDL_GetVideoSurface(), "/out/1_library.bmp");
     printf("saved 1_library.bmp\n");
 
-    /* 2. Settings screen, cursor on Repeat */
+    /* 2. Now playing full screen (view_mode=1) */
+    ui_render(&tl, 2, 3, AUDIO_PLAYING, 83, 296, 28, "Repeat All", "Rock", 0, "Ready", 1);
+    SDL_SaveBMP(SDL_GetVideoSurface(), "/out/4_nowplaying.bmp");
+    printf("saved 4_nowplaying.bmp\n");
+
+    /* 3. Settings screen, cursor on Repeat */
     settings_init(&s);
     s.cursor = SETTINGS_ITEM_REPEAT;
     ui_render_settings(&s, AUDIO_PLAYING, "");

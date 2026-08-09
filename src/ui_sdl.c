@@ -314,6 +314,28 @@ static void draw_equalizer_bg(AudioState state)
     }
 }
 
+/* EQ strip untuk now playing view: bars rapat, sejajar & full width sama timer bar. */
+static void draw_equalizer_strip(AudioState state, int x, int y, int w)
+{
+    static const unsigned char base[24] = {
+        10, 22, 16, 34, 28, 42, 18, 30,
+        12, 38, 24, 44, 14, 32, 20, 40,
+        26, 18, 36, 16, 30, 22, 42, 12
+    };
+    int i;
+    int frame = state == AUDIO_PLAYING ? (int)(SDL_GetTicks() / 95) : 0;
+    Uint32 bar = rgb(46, 55, 66);
+    Uint32 bar_hi = rgb(255, 170, 0);
+    int bw = 6;
+    int step = (w - bw) / 39;
+
+    for (i = 0; i < 40; i++) {
+        int h = 6 + ((base[(i + frame) % 24] + frame * 3) % 12);
+        int bx = x + i * step;
+        fill_round_rect(bx, y - h, bw, h, 2, i % 4 == 0 ? bar_hi : bar);
+    }
+}
+
 static void format_time_pair(int elapsed_seconds, int duration_seconds, char *out, size_t out_size)
 {
     int elapsed_minutes;
@@ -499,7 +521,7 @@ void ui_shutdown(void)
     screen = NULL;
 }
 
-void ui_render(const TrackList *list, int selected, int playing, AudioState state, int elapsed_seconds, int duration_seconds, int volume, const char *repeat_label, const char *eq_label, int favorites_only, const char *message)
+void ui_render(const TrackList *list, int selected, int playing, AudioState state, int elapsed_seconds, int duration_seconds, int volume, const char *repeat_label, const char *eq_label, int favorites_only, const char *message, int view_mode)
 {
     int i;
     int first = 0;
@@ -539,19 +561,19 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
 
     fill_round_rect(18, 14, SCREEN_W - 36, SCREEN_H - 28, 18, panel_shadow);
     fill_round_rect(22, 18, SCREEN_W - 44, SCREEN_H - 36, 16, shell);
-    draw_equalizer_bg(state);
+    /* EQ background header cuma di mode list; now playing pakai strip EQ sendiri */
+    if (view_mode == 0) {
+        draw_equalizer_bg(state);
+    }
 
+    /* Header stacked: judul di atas, info bar di bawah — margin kiri sama (x=38) */
     draw_text_scaled(38, 52, "Garlic MP3", fg, 10, 2);
     draw_text_right(594, 49, state_label(state), muted, 12);
     draw_text(38, 74, repeat_label ? repeat_label : "Repeat All", muted, 14);
     if (favorites_only) {
         draw_text(158, 74, "Favorites", hi, 12);
     }
-    if (eq_label && eq_label[0]) {
-        char eq_line[24];
-        snprintf(eq_line, sizeof(eq_line), "EQ: %s", eq_label);
-        draw_text(262, 74, eq_line, muted, 16);
-    }
+    /* Label EQ dipindah: di now playing view (metadata line kanan), bukan header */
 
     if (list->count == 0) {
         fill_round_rect(42, 108, 556, 252, 14, panel_shadow);
@@ -559,9 +581,55 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
         fill_round_rect(40, 106, 552, 248, 12, screen_bg);
         draw_text_scaled(72, 152, "No MP3 files", fg, 12, 2);
         draw_text(74, 192, "Use Roms/MUSIC or app MUSIC folder", muted, 58);
-    } else {
+    } else if (view_mode == 1) {
+        /* NOW PLAYING — full width */
         char counter[32];
-        visible = 13;
+        int duration;
+
+        snprintf(counter, sizeof(counter), "%03d/%03d", selected + 1, list->count);
+        draw_text_right(594, 68, counter, muted, 12);
+
+        duration = duration_seconds > 0 ? duration_seconds :
+            (playing >= 0 && playing < list->count ? list->tracks[playing].duration_seconds : 0);
+
+        draw_album_visual(240, 104, 160, muted, state == AUDIO_PLAYING);
+        if (playing >= 0 && playing < list->count) {
+            now_title = list->tracks[playing].display_name;
+        } else {
+            now_title = "No active track";
+        }
+        {
+            int len = (int)strlen(now_title);
+            int max_chars = 30;
+            int x;
+            if (len > max_chars) {
+                len = max_chars;
+            }
+            x = (SCREEN_W - len * CHAR_W * 2) / 2;
+            draw_text_scaled(x, 272, now_title, fg, max_chars, 2);
+        }
+        {
+            char line[64];
+            snprintf(line, sizeof(line), "%s  %s", state_label(state), repeat_label ? repeat_label : "Repeat All");
+            draw_text((SCREEN_W - (int)strlen(line) * CHAR_W) / 2, 300, line, muted, 40);
+        }
+        if (eq_label && eq_label[0]) {
+            char eq_line[24];
+            snprintf(eq_line, sizeof(eq_line), "EQ: %s", eq_label);
+            draw_text_right(594, 300, eq_line, muted, 16);
+        }
+        {
+            char time_label[32];
+            format_time_pair(elapsed_seconds, duration, time_label, sizeof(time_label));
+            draw_text((SCREEN_W - (int)strlen(time_label) * CHAR_W) / 2, 314, time_label, fg, 16);
+        }
+        /* EQ strip & timer bar: start x & width sama (full width), margin bawah lega */
+        draw_equalizer_strip(state, 38, 344, 556);
+        draw_progress_bar(38, 348, 556, 6, elapsed_seconds, duration, rgb(60, 70, 80), hi);
+    } else {
+        /* TRACK LIST — full width */
+        char counter[32];
+        visible = 14;
         if (selected >= visible) {
             first = selected - visible + 1;
         }
@@ -569,29 +637,9 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
         snprintf(counter, sizeof(counter), "%03d/%03d", selected + 1, list->count);
         draw_text_right(594, 68, counter, muted, 12);
 
-        fill_round_rect(42, 108, 382, 252, 14, panel_shadow);
-        fill_round_rect(38, 104, 382, 252, 14, border);
-        fill_round_rect(40, 106, 378, 248, 12, screen_bg);
-        fill_round_rect(439, 108, 159, 252, 14, panel_shadow);
-        fill_round_rect(435, 104, 159, 252, 14, border);
-        fill_round_rect(437, 106, 155, 248, 12, rgb(26, 32, 39));
-        draw_album_visual(454, 122, 120, muted, state == AUDIO_PLAYING);
-        draw_text(454, 260, "Now Playing", hi, 14);
-        draw_text(454, 280, state_label(state), fg, 12);
-        if (playing >= 0 && playing < list->count) {
-            now_title = list->tracks[playing].display_name;
-        } else {
-            now_title = "No active track";
-        }
-        draw_marquee_text(454, 300, now_title, muted, 16, state == AUDIO_PLAYING || state == AUDIO_PAUSED);
-        {
-            char time_label[32];
-            int duration = duration_seconds > 0 ? duration_seconds :
-                (playing >= 0 && playing < list->count ? list->tracks[playing].duration_seconds : 0);
-            format_time_pair(elapsed_seconds, duration, time_label, sizeof(time_label));
-            draw_text(454, 324, time_label, fg, 16);
-            draw_progress_bar(454, 340, 120, 4, elapsed_seconds, duration, rgb(60, 70, 80), hi_text);
-        }
+        fill_round_rect(42, 108, 556, 252, 14, panel_shadow);
+        fill_round_rect(38, 104, 556, 252, 14, border);
+        fill_round_rect(40, 106, 552, 248, 12, screen_bg);
 
         for (i = 0; i < visible && first + i < list->count; i++) {
             int idx = first + i;
@@ -601,7 +649,7 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
             Uint32 row_color = idx == selected ? hi_text : fg;
 
             if (idx == selected) {
-                fill_round_rect(50, y - 5, 356, 18, 7, hi);
+                fill_round_rect(50, y - 5, 528, 18, 7, hi);
             }
 
             snprintf(line, sizeof(line), "%03d%c %s", idx + 1, list->tracks[idx].favorite ? '+' : ' ', list->tracks[idx].display_name);
@@ -609,13 +657,13 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
                 draw_text(54, y, ">", row_color, 1);
             }
             if (idx == selected) {
-                draw_marquee_text(70, y, line, hi_text, 33, 1);
+                draw_marquee_text(70, y, line, hi_text, 55, 1);
             } else {
-                draw_text(70, y, line, fg, 33);
+                draw_text(70, y, line, fg, 55);
             }
             format_bitrate_label(list->tracks[idx].bitrate_kbps, list->tracks[idx].vbr, bitrate_label, sizeof(bitrate_label));
             if (bitrate_label[0]) {
-                draw_text_right(406, y, bitrate_label, row_color, 6);
+                draw_text_right(574, y, bitrate_label, row_color, 6);
             }
         }
     }

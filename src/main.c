@@ -983,8 +983,13 @@ static int handle_settings_action(InputAction action, Settings *settings, int *s
     }
 }
 
-static int dispatch_action(InputAction action, int *screen, Settings *settings, TrackList *list, int *selected, int *playing, int *repeat_mode, int *favorites_only, int *running, int *debug, ShuffleHistory *shuffle_history, RecentList *recent, const char *favorites_path, const char *recent_path, char *message, size_t message_size)
+static int dispatch_action(InputAction action, int *screen, int *view_mode, Settings *settings, TrackList *list, int *selected, int *playing, int *repeat_mode, int *favorites_only, int *running, int *debug, ShuffleHistory *shuffle_history, RecentList *recent, const char *favorites_path, const char *recent_path, char *message, size_t message_size)
 {
+    if (action == ACTION_VIEW_TOGGLE) {
+        *view_mode = *view_mode ? 0 : 1;
+        message[0] = '\0';
+        return 0;
+    }
     if (action == ACTION_SETTINGS_TOGGLE) {
         *screen = *screen == SCREEN_SETTINGS ? SCREEN_LIBRARY : SCREEN_SETTINGS;
         message[0] = '\0';
@@ -1028,6 +1033,7 @@ int main(int argc, char **argv)
     int debug = 0;
     int favorites_only = 0;
     int screen = SCREEN_LIBRARY;
+    int view_mode = 0;   /* 0 = track list full, 1 = now playing full */
     Settings settings;
     Uint32 last_log = 0;
     Uint32 last_state_save = 0;
@@ -1136,7 +1142,7 @@ int main(int argc, char **argv)
         /* evdev thread input */
         {
             InputAction action = input_poll_joystick();
-            if (dispatch_action(action, &screen, &settings, &list, &selected, &playing, &repeat_mode, &favorites_only, &running, &debug, &shuffle_history, &recent, favorites_path, recent_path, message, sizeof(message))) {
+            if (dispatch_action(action, &screen, &view_mode, &settings, &list, &selected, &playing, &repeat_mode, &favorites_only, &running, &debug, &shuffle_history, &recent, favorites_path, recent_path, message, sizeof(message))) {
                 save_state(state_path, &list, selected, playing, repeat_mode, debug, favorites_only, &settings);
                 last_state_save = SDL_GetTicks();
             }
@@ -1145,7 +1151,7 @@ int main(int argc, char **argv)
         /* SDL event queue (keyboard fallback / SDL_QUIT) */
         while (SDL_PollEvent(&event)) {
             InputAction action = input_event_to_action(&event);
-            if (dispatch_action(action, &screen, &settings, &list, &selected, &playing, &repeat_mode, &favorites_only, &running, &debug, &shuffle_history, &recent, favorites_path, recent_path, message, sizeof(message))) {
+            if (dispatch_action(action, &screen, &view_mode, &settings, &list, &selected, &playing, &repeat_mode, &favorites_only, &running, &debug, &shuffle_history, &recent, favorites_path, recent_path, message, sizeof(message))) {
                 save_state(state_path, &list, selected, playing, repeat_mode, debug, favorites_only, &settings);
                 last_state_save = SDL_GetTicks();
             }
@@ -1184,7 +1190,7 @@ int main(int argc, char **argv)
         } else if (screen == SCREEN_HELP) {
             ui_render_help(audio_state());
         } else {
-            ui_render(&list, selected, playing, audio_state(), audio_elapsed_seconds(), audio_duration_seconds(), audio_get_volume(), repeat_label(repeat_mode), settings_preset_name(settings.preset), favorites_only, message);
+            ui_render(&list, selected, playing, audio_state(), audio_elapsed_seconds(), audio_duration_seconds(), audio_get_volume(), repeat_label(repeat_mode), settings_preset_name(settings.preset), favorites_only, message, view_mode);
         }
         SDL_Delay(33);
     }

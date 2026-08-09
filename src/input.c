@@ -120,8 +120,8 @@ static InputAction button_action(int button, int pressed)
             return ACTION_FAVORITES_ONLY_TOGGLE;
         }
         return ACTION_FAVORITE_TOGGLE;
-    case SDL_BTN_L:
-    case SDL_BTN_L2:     return ACTION_VOL_DOWN;
+    case SDL_BTN_L:      return ACTION_VOL_DOWN;
+    case SDL_BTN_L2:     return ACTION_VIEW_TOGGLE;
     case SDL_BTN_R:      return ACTION_VOL_UP;
     case SDL_BTN_START:
         if (select_held) {

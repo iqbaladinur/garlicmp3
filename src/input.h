@@ -24,6 +24,7 @@ typedef enum InputAction {
     ACTION_VOL_UP,
     ACTION_SETTINGS_TOGGLE,
     ACTION_HELP_TOGGLE,
+    ACTION_VIEW_TOGGLE,
     ACTION_QUIT
 } InputAction;
 

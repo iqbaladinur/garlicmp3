@@ -137,8 +137,11 @@ int main(void)
     }
     init_list(&tl);
 
-    ui_render(&tl, 2, 3, AUDIO_PLAYING, 83, 296, 28, "Repeat All", "Rock", 0, "Ready");
+    ui_render(&tl, 2, 3, AUDIO_PLAYING, 83, 296, 28, "Repeat All", "Rock", 0, "Ready", 0);
     report("library");
+
+    ui_render(&tl, 2, 3, AUDIO_PLAYING, 83, 296, 28, "Repeat All", "Rock", 0, "Ready", 1);
+    report("nowplaying");
 
     settings_init(&s);
     s.cursor = SETTINGS_ITEM_REPEAT;

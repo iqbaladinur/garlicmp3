@@ -40,7 +40,7 @@ python3 - "$OUT" <<'PY'
 import os, sys
 from PIL import Image
 out = sys.argv[1]
-for name in ['1_library', '2_settings', '3_help']:
+for name in ['1_library', '2_settings', '3_help', '4_nowplaying']:
     bmp = os.path.join(out, name + '.bmp')
     png = os.path.join(out, name + '.png')
     if os.path.exists(bmp):
