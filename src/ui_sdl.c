@@ -4,7 +4,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <math.h>
 
 #include "album_art.h"
 #include "version.h"
@@ -499,50 +498,6 @@ static void blit_cover_565(int x, int y, int dst, const unsigned char *buf)
     }
 }
 
-/* Pre-rendered warm radial glow (RGB565) for the now-playing background — a
- * halo that fades from warm orange at the core to the shell color outside.
- * Built once, blitted per frame (cheap row memcpy). */
-static unsigned char *build_glow_565(int r_outer, int r_core)
-{
-    int d = r_outer * 2;
-    unsigned char *buf;
-    int i, j;
-    int cr = 62, cg = 48, cb = 26;   /* warm orange core */
-    int sr = 18, sg = 22, sb = 27;   /* shell edge (seamless) */
-    Uint16 core565;
-    Uint16 shell565;
-
-    buf = (unsigned char *)malloc((size_t)d * d * 2);
-    if (!buf) {
-        return NULL;
-    }
-    core565 = (Uint16)(((cr >> 3) << 11) | ((cg >> 2) << 5) | (cb >> 3));
-    shell565 = (Uint16)(((sr >> 3) << 11) | ((sg >> 2) << 5) | (sb >> 3));
-
-    for (j = 0; j < d; j++) {
-        for (i = 0; i < d; i++) {
-            int dx = i - r_outer;
-            int dy = j - r_outer;
-            float r = sqrtf((float)(dx * dx + dy * dy));
-            Uint16 c;
-            if (r <= r_core) {
-                c = core565;
-            } else if (r >= r_outer) {
-                c = shell565;
-            } else {
-                float t = (r - r_core) / (float)(r_outer - r_core);
-                int rr = (int)(cr + (sr - cr) * t + 0.5f);
-                int gg = (int)(cg + (sg - cg) * t + 0.5f);
-                int bb = (int)(cb + (sb - cb) * t + 0.5f);
-                c = (Uint16)(((rr >> 3) << 11) | ((gg >> 2) << 5) | (bb >> 3));
-            }
-            buf[((size_t)j * d + i) * 2] = (unsigned char)(c & 0xff);
-            buf[((size_t)j * d + i) * 2 + 1] = (unsigned char)(c >> 8);
-        }
-    }
-    return buf;
-}
-
 static void draw_album_visual(int x, int y, int size, Uint32 muted, int spinning, const char *art_path)
 {
     static const int marker_x[32] = {
@@ -562,8 +517,6 @@ static void draw_album_visual(int x, int y, int size, Uint32 muted, int spinning
     static char cached_path[1024] = "";
     static unsigned char *cached_rgba = NULL;
     static unsigned char *cached_565 = NULL;
-    static unsigned char *glow_565 = NULL;
-    static int glow_ready = 0;
     static int cached_w = 0;
     static int cached_h = 0;
     static int cached_dst = 0;
@@ -587,15 +540,6 @@ static void draw_album_visual(int x, int y, int size, Uint32 muted, int spinning
         }
     } else {
         last_tick = now;
-    }
-
-    /* Warm radial glow behind the album container (pre-rendered once) */
-    if (!glow_ready) {
-        glow_565 = build_glow_565(155, 113);
-        glow_ready = 1;
-    }
-    if (glow_565) {
-        blit_cover_565(cx - 155, cy - 155, 310, glow_565);
     }
 
     fill_round_rect(x + 4, y + 4, size, size, 12, rgb(7, 10, 13));
