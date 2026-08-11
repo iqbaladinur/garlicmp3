@@ -365,10 +365,30 @@ static void format_time_pair(int elapsed_seconds, int duration_seconds, char *ou
     snprintf(out, out_size, "%02d:%02d / %02d:%02d", elapsed_minutes, elapsed_seconds, duration_minutes, duration_seconds);
 }
 
+/* Rounded-rect containment test matching fill_round_rect geometry (horizontal
+ * strip + vertical strip + 4 corner arcs). Used to mask the square cover so it
+ * respects the container's rounded interior corners. */
+static int inside_cover_round(int i, int j, int dst, int r)
+{
+    int cx, cy, dx, dy;
+
+    if (i >= r && i < dst - r) {
+        return 1;
+    }
+    if (j >= r && j < dst - r) {
+        return 1;
+    }
+    cx = (i < r) ? r : (dst - 1 - r);
+    cy = (j < r) ? r : (dst - 1 - r);
+    dx = i - cx;
+    dy = j - cy;
+    return dx * dx + dy * dy <= r * r;
+}
+
 /* Bilinear-scale an RGBA cover into a fitted (letterboxed) RGB565 buffer of
- * dst x dst. Returns malloc'd buffer (dst*dst*2) or NULL. Runs once per track
- * change, not per frame. */
-static unsigned char *scale_cover_565(const unsigned char *rgba, int sw, int sh, int dst)
+ * dst x dst, masked to the rounded interior (radius r). Returns malloc'd buffer
+ * (dst*dst*2) or NULL. Runs once per track change, not per frame. */
+static unsigned char *scale_cover_565(const unsigned char *rgba, int sw, int sh, int dst, int radius)
 {
     unsigned char *out;
     int dw, dh, ox, oy, i, j;
@@ -428,7 +448,8 @@ static unsigned char *scale_cover_565(const unsigned char *rgba, int sw, int sh,
             int px = i - ox;
             int py = j - oy;
             Uint16 px565;
-            if (px < 0 || px >= dw || py < 0 || py >= dh) {
+            if (px < 0 || px >= dw || py < 0 || py >= dh ||
+                !inside_cover_round(i, j, dst, radius)) {
                 px565 = bg565;
             } else {
                 const unsigned char *p00 = rgba + ((size_t)y0t[py] * sw + x0t[px]) * 4;
@@ -542,7 +563,7 @@ static void draw_album_visual(int x, int y, int size, Uint32 muted, int spinning
             snprintf(cached_path, sizeof(cached_path), "%s", art_path);
             if (album_art_load(art_path, &cached_rgba, &cached_w, &cached_h)) {
                 cached_dst = size - 4;
-                cached_565 = scale_cover_565(cached_rgba, cached_w, cached_h, cached_dst);
+                cached_565 = scale_cover_565(cached_rgba, cached_w, cached_h, cached_dst, 10);
             }
         }
         if (cached_565) {
