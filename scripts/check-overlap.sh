@@ -32,7 +32,7 @@ sed -e "s/^static void fill_round_rect(/static void track_fill_round_rect_orig(/
     -e "s/draw_text(/track_draw_text(/g" \
     /src/src/ui_sdl.c > /tmp/ui_sdl_track.c
 echo "== compiling =="
-gcc -O2 -Wno-unused-function -o /tmp/overlap /src/tools/overlap.c /src/src/settings.c \
+gcc -O2 -Wno-unused-function -o /tmp/overlap /src/tools/overlap.c /src/src/settings.c /src/src/album_art.c \
   -I/tmp/sdl/include -I/src/src -I/tmp -L/tmp/sdl/lib -lSDL -lm
 echo "== running =="
 cd /tmp && SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy /tmp/overlap

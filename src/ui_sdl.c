@@ -1,9 +1,11 @@
 #include "ui_sdl.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
+#include "album_art.h"
 #include "version.h"
 
 #define SCREEN_W 640
@@ -363,7 +365,119 @@ static void format_time_pair(int elapsed_seconds, int duration_seconds, char *ou
     snprintf(out, out_size, "%02d:%02d / %02d:%02d", elapsed_minutes, elapsed_seconds, duration_minutes, duration_seconds);
 }
 
-static void draw_album_visual(int x, int y, int size, Uint32 muted, int spinning)
+/* Bilinear-scale an RGBA cover into a fitted (letterboxed) RGB565 buffer of
+ * dst x dst. Returns malloc'd buffer (dst*dst*2) or NULL. Runs once per track
+ * change, not per frame. */
+static unsigned char *scale_cover_565(const unsigned char *rgba, int sw, int sh, int dst)
+{
+    unsigned char *out;
+    int dw, dh, ox, oy, i, j;
+    float scale;
+    Uint16 bg565;
+    int *x0t, *x1t, *y0t, *y1t;
+    float *fxt, *fyt;
+
+    if (!rgba || sw <= 0 || sh <= 0 || dst <= 0) {
+        return NULL;
+    }
+    scale = (float)dst / (sw > sh ? sw : sh);
+    dw = (int)(sw * scale);
+    dh = (int)(sh * scale);
+    if (dw < 1) dw = 1;
+    if (dh < 1) dh = 1;
+    if (dw > dst) dw = dst;
+    if (dh > dst) dh = dst;
+    ox = (dst - dw) / 2;
+    oy = (dst - dh) / 2;
+
+    out = (unsigned char *)malloc((size_t)dst * dst * 2);
+    x0t = (int *)malloc((size_t)dw * sizeof(int));
+    x1t = (int *)malloc((size_t)dw * sizeof(int));
+    fxt = (float *)malloc((size_t)dw * sizeof(float));
+    y0t = (int *)malloc((size_t)dh * sizeof(int));
+    y1t = (int *)malloc((size_t)dh * sizeof(int));
+    fyt = (float *)malloc((size_t)dh * sizeof(float));
+    if (!out || !x0t || !x1t || !fxt || !y0t || !y1t || !fyt) {
+        free(out); free(x0t); free(x1t); free(fxt); free(y0t); free(y1t); free(fyt);
+        return NULL;
+    }
+
+    for (i = 0; i < dw; i++) {
+        float gx = (i + 0.5f) * sw / dw - 0.5f;
+        int x0 = (int)gx;
+        if (x0 < 0) x0 = 0;
+        if (x0 >= sw) x0 = sw - 1;
+        x0t[i] = x0;
+        x1t[i] = x0 + 1 < sw ? x0 + 1 : x0;
+        fxt[i] = gx - x0;
+    }
+    for (j = 0; j < dh; j++) {
+        float gy = (j + 0.5f) * sh / dh - 0.5f;
+        int y0 = (int)gy;
+        if (y0 < 0) y0 = 0;
+        if (y0 >= sh) y0 = sh - 1;
+        y0t[j] = y0;
+        y1t[j] = y0 + 1 < sh ? y0 + 1 : y0;
+        fyt[j] = gy - y0;
+    }
+
+    bg565 = (Uint16)(((12 >> 3) << 11) | ((16 >> 2) << 5) | (21 >> 3));
+
+    for (j = 0; j < dst; j++) {
+        for (i = 0; i < dst; i++) {
+            int px = i - ox;
+            int py = j - oy;
+            Uint16 px565;
+            if (px < 0 || px >= dw || py < 0 || py >= dh) {
+                px565 = bg565;
+            } else {
+                const unsigned char *p00 = rgba + ((size_t)y0t[py] * sw + x0t[px]) * 4;
+                const unsigned char *p10 = rgba + ((size_t)y0t[py] * sw + x1t[px]) * 4;
+                const unsigned char *p01 = rgba + ((size_t)y1t[py] * sw + x0t[px]) * 4;
+                const unsigned char *p11 = rgba + ((size_t)y1t[py] * sw + x1t[px]) * 4;
+                float fx = fxt[px];
+                float fy = fyt[py];
+                int r, g, b;
+                float top, bot;
+                top = p00[0] * (1.0f - fx) + p10[0] * fx;
+                bot = p01[0] * (1.0f - fx) + p11[0] * fx;
+                r = (int)(top * (1.0f - fy) + bot * fy + 0.5f);
+                top = p00[1] * (1.0f - fx) + p10[1] * fx;
+                bot = p01[1] * (1.0f - fx) + p11[1] * fx;
+                g = (int)(top * (1.0f - fy) + bot * fy + 0.5f);
+                top = p00[2] * (1.0f - fx) + p10[2] * fx;
+                bot = p01[2] * (1.0f - fx) + p11[2] * fx;
+                b = (int)(top * (1.0f - fy) + bot * fy + 0.5f);
+                if (r < 0) r = 0;
+                if (r > 255) r = 255;
+                if (g < 0) g = 0;
+                if (g > 255) g = 255;
+                if (b < 0) b = 0;
+                if (b > 255) b = 255;
+                px565 = (Uint16)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+            }
+            out[((size_t)j * dst + i) * 2] = (unsigned char)(px565 & 0xff);
+            out[((size_t)j * dst + i) * 2 + 1] = (unsigned char)(px565 >> 8);
+        }
+    }
+
+    free(x0t); free(x1t); free(fxt); free(y0t); free(y1t); free(fyt);
+    return out;
+}
+
+static void blit_cover_565(int x, int y, int dst, const unsigned char *buf)
+{
+    int row;
+    int pitch = screen->pitch;
+    Uint8 *dp = (Uint8 *)screen->pixels + y * pitch + x * 2;
+
+    for (row = 0; row < dst; row++) {
+        memcpy(dp, buf + (size_t)row * dst * 2, (size_t)dst * 2);
+        dp += pitch;
+    }
+}
+
+static void draw_album_visual(int x, int y, int size, Uint32 muted, int spinning, const char *art_path)
 {
     static const int marker_x[32] = {
         0, 8, 16, 24, 30, 36, 39, 41,
@@ -379,6 +493,12 @@ static void draw_album_visual(int x, int y, int size, Uint32 muted, int spinning
     };
     static int frame = 0;
     static Uint32 last_tick = 0;
+    static char cached_path[1024] = "";
+    static unsigned char *cached_rgba = NULL;
+    static unsigned char *cached_565 = NULL;
+    static int cached_w = 0;
+    static int cached_h = 0;
+    static int cached_dst = 0;
     Uint32 now = SDL_GetTicks();
     int cx = x + size / 2;
     int cy = y + size / 2;
@@ -404,6 +524,45 @@ static void draw_album_visual(int x, int y, int size, Uint32 muted, int spinning
     fill_round_rect(x + 4, y + 4, size, size, 12, rgb(7, 10, 13));
     fill_round_rect(x, y, size, size, 12, rgb(76, 88, 100));
     fill_round_rect(x + 2, y + 2, size - 4, size - 4, 10, art_bg);
+
+    /* Album art: reload/decode only when the active track path changes.
+     * On failure keep the path cached so we don't re-read the file every frame. */
+    if (art_path && art_path[0]) {
+        if (strcmp(cached_path, art_path) != 0) {
+            if (cached_rgba) {
+                free(cached_rgba);
+                cached_rgba = NULL;
+            }
+            if (cached_565) {
+                free(cached_565);
+                cached_565 = NULL;
+            }
+            cached_w = 0;
+            cached_h = 0;
+            snprintf(cached_path, sizeof(cached_path), "%s", art_path);
+            if (album_art_load(art_path, &cached_rgba, &cached_w, &cached_h)) {
+                cached_dst = size - 4;
+                cached_565 = scale_cover_565(cached_rgba, cached_w, cached_h, cached_dst);
+            }
+        }
+        if (cached_565) {
+            blit_cover_565(x + 2, y + 2, cached_dst, cached_565);
+            return;
+        }
+    } else {
+        if (cached_rgba) {
+            free(cached_rgba);
+            cached_rgba = NULL;
+        }
+        if (cached_565) {
+            free(cached_565);
+            cached_565 = NULL;
+        }
+        cached_path[0] = '\0';
+        cached_w = 0;
+        cached_h = 0;
+    }
+
     fill_circle(cx + 3, cy + 3, 42, rgb(3, 6, 9));
     fill_circle(cx, cy, 42, disc);
     fill_circle(cx, cy, 31, ring);
@@ -594,7 +753,11 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
         duration = duration_seconds > 0 ? duration_seconds :
             (playing >= 0 && playing < list->count ? list->tracks[playing].duration_seconds : 0);
 
-        draw_album_visual(240, 104, 160, muted, state == AUDIO_PLAYING);
+        {
+            const char *art_path = (playing >= 0 && playing < list->count)
+                ? list->tracks[playing].path : NULL;
+            draw_album_visual(240, 104, 160, muted, state == AUDIO_PLAYING, art_path);
+        }
         if (playing >= 0 && playing < list->count) {
             now_title = list->tracks[playing].display_name;
         } else {

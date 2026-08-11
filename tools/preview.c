@@ -27,6 +27,10 @@ static void init_list(TrackList *tl)
         tl->tracks[i].vbr = (i % 4 == 0);
         tl->tracks[i].favorite = (i == 2 || i == 7);
     }
+    /* Track 3 is the "playing" one in the now-playing render; give it an
+     * embedded cover so the album-art path gets exercised (file is generated
+     * by scripts/preview-ui.sh into /out). */
+    snprintf(tl->tracks[3].path, sizeof(tl->tracks[3].path), "/out/test_cover.mp3");
     tl->count = 12;
 }
 

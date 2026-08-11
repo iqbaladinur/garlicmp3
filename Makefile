@@ -29,6 +29,7 @@ SRCS := \
 	src/file_scan.c \
 	src/input.c \
 	src/settings.c \
+	src/album_art.c \
 	src/ui_sdl.c
 
 OBJS := $(SRCS:src/%.c=build/%.o)
