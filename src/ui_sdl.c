@@ -339,6 +339,32 @@ static void draw_equalizer_strip(AudioState state, int x, int y, int w)
     }
 }
 
+/* Single diagonal gradient dot matrix for the now-playing background: dots
+ * fade once, softly, from the equalizer bar color (top-left) to a muted
+ * lighter blue-gray (bottom-right). No repeating bands; drawn early. */
+static void draw_dot_grid(void)
+{
+    int x;
+    int y;
+    const float maxv = (float)(SCREEN_W - 60 + SCREEN_H - 52);
+
+    for (y = 30; y < SCREEN_H - 22; y += 12) {
+        for (x = 30; x < SCREEN_W - 22; x += 12) {
+            float v = (float)((x - 30) + (y - 30)) / maxv;
+            int r;
+            int g;
+            int b;
+            if (v > 1.0f) {
+                v = 1.0f;
+            }
+            r = 25 + (int)(v * 35.0f);
+            g = 33 + (int)(v * 41.0f);
+            b = 40 + (int)(v * 48.0f);
+            fill_rect(x, y, 2, 2, rgb(r, g, b));
+        }
+    }
+}
+
 static void format_time_pair(int elapsed_seconds, int duration_seconds, char *out, size_t out_size)
 {
     int elapsed_minutes;
@@ -768,6 +794,7 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
         char counter[32];
         int duration;
 
+        draw_dot_grid();
         snprintf(counter, sizeof(counter), "%03d/%03d", selected + 1, list->count);
         draw_text_right(594, 68, counter, muted, 12);
 
