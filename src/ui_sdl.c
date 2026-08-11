@@ -314,7 +314,8 @@ static void draw_equalizer_bg(AudioState state)
     }
 }
 
-/* EQ strip untuk now playing view: bars rapat, sejajar & full width sama timer bar. */
+/* EQ strip untuk now playing view: style disamain dengan header EQ (bar gelap
+ * tipis 5px, spacing 11, animasi sliding wobble), tetap centered di atas timer bar. */
 static void draw_equalizer_strip(AudioState state, int x, int y, int w)
 {
     static const unsigned char base[24] = {
@@ -322,17 +323,17 @@ static void draw_equalizer_strip(AudioState state, int x, int y, int w)
         12, 38, 24, 44, 14, 32, 20, 40,
         26, 18, 36, 16, 30, 22, 42, 12
     };
+    const int n = 33;
+    const int bw = 5;
     int i;
+    int step = 11;
+    int x0 = x + (w - (n - 1) * step - bw) / 2;
     int frame = state == AUDIO_PLAYING ? (int)(SDL_GetTicks() / 95) : 0;
-    Uint32 bar = rgb(46, 55, 66);
-    Uint32 bar_hi = rgb(255, 170, 0);
-    int bw = 6;
-    int step = (w - bw) / 39;
+    Uint32 bar = rgb(25, 33, 40);
 
-    for (i = 0; i < 40; i++) {
-        int h = 6 + ((base[(i + frame) % 24] + frame * 3) % 12);
-        int bx = x + i * step;
-        fill_round_rect(bx, y - h, bw, h, 2, i % 4 == 0 ? bar_hi : bar);
+    for (i = 0; i < n; i++) {
+        int h = 6 + ((base[(i * 3 + frame) % 24] + frame) % 12);
+        fill_round_rect(x0 + i * step, y - h, bw, h, 2, bar);
     }
 }
 
@@ -400,7 +401,8 @@ static void draw_album_visual(int x, int y, int size, Uint32 muted, int spinning
         last_tick = now;
     }
 
-    fill_round_rect(x, y, size, size, 12, rgb(5, 8, 11));
+    fill_round_rect(x + 4, y + 4, size, size, 12, rgb(7, 10, 13));
+    fill_round_rect(x, y, size, size, 12, rgb(76, 88, 100));
     fill_round_rect(x + 2, y + 2, size - 4, size - 4, 10, art_bg);
     fill_circle(cx + 3, cy + 3, 42, rgb(3, 6, 9));
     fill_circle(cx, cy, 42, disc);
@@ -623,9 +625,9 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
             format_time_pair(elapsed_seconds, duration, time_label, sizeof(time_label));
             draw_text((SCREEN_W - (int)strlen(time_label) * CHAR_W) / 2, 314, time_label, fg, 16);
         }
-        /* EQ strip & timer bar: start x & width sama (full width), margin bawah lega */
-        draw_equalizer_strip(state, 38, 344, 556);
-        draw_progress_bar(38, 348, 556, 6, elapsed_seconds, duration, rgb(60, 70, 80), hi);
+        /* EQ strip & timer bar: 80% lebar layar (444px), centered — sejajar label time */
+        draw_equalizer_strip(state, 98, 344, 444);
+        draw_progress_bar(98, 348, 444, 6, elapsed_seconds, duration, rgb(60, 70, 80), hi);
     } else {
         /* TRACK LIST — full width */
         char counter[32];

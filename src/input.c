@@ -10,9 +10,20 @@ static Uint32 hat_next_repeat = 0;
 static int input_debug = 0;
 static int select_held = 0;
 static int select_combo_used = 0;
+static Uint32 axis_fire_tick[2] = {0, 0}; /* L2 = axis 2, R2 = axis 5 */
 
 #define HAT_REPEAT_DELAY_MS 360
 #define HAT_REPEAT_RATE_MS 95
+/* L2/R2 are DIGITAL switches wired to axis slots: pressing bounces the value
+ * +32767/-32768 and release never returns to neutral — so value-edge/latch
+ * detection can't work. Debounce on TIME instead: each physical press emits a
+ * burst of events; only the first event of a burst fires. */
+#define AXIS_EVENT_THRESHOLD 10000
+#define AXIS_DEBOUNCE_MS 300
+/* The axis value persists at +/-32767 even after release, so SDL emits a stale
+ * JOYAXISMOTION event right after open. Ignore axis events during a startup
+ * grace window or the app would launch into the toggled view. */
+#define AXIS_STARTUP_GRACE_MS 500
 
 enum {
     SDL_BTN_A      = 0,
@@ -27,7 +38,7 @@ enum {
     SDL_BTN_MENU   = 9,
     SDL_BTN_VOL_UP = 10,
     SDL_BTN_VOL_DOWN = 11,
-    SDL_BTN_R2     = 12 /* tentative: verify with debug=1 on device */
+    SDL_BTN_R2     = 12 /* NOTE: dead — device exposes L2/R2 as AXES (2/5), not buttons */
 };
 
 void input_init(void)
@@ -38,6 +49,9 @@ void input_init(void)
     if (SDL_NumJoysticks() > 0) {
         joy = SDL_JoystickOpen(0);
         if (joy) {
+            Uint32 grace = SDL_GetTicks() + AXIS_STARTUP_GRACE_MS;
+            axis_fire_tick[0] = grace;
+            axis_fire_tick[1] = grace;
             printf("Joystick: %s buttons=%d axes=%d hats=%d\n",
                    SDL_JoystickName(0),
                    SDL_JoystickNumButtons(joy),
@@ -70,11 +84,18 @@ InputAction input_poll_joystick(void)
     Uint32 now;
     Uint8 hat;
 
-    if (!joy || hat_hold_action == ACTION_NONE) {
+    if (!joy) {
         return ACTION_NONE;
     }
 
+    /* Keep raw joystick state fresh every frame so SDL emits JOYAXISMOTION
+     * events for L2/R2 (handled with time-debounce in input_event_to_action). */
     SDL_JoystickUpdate();
+
+    if (hat_hold_action == ACTION_NONE) {
+        return ACTION_NONE; /* initial hat press handled via SDL_JOYHATMOTION event */
+    }
+
     hat = SDL_JoystickGetHat(joy, 0);
     if (hat == SDL_HAT_CENTERED || ((hat & (SDL_HAT_UP | SDL_HAT_DOWN)) == 0)) {
         hat_hold_action = ACTION_NONE;
@@ -204,6 +225,38 @@ InputAction input_event_to_action(const SDL_Event *event)
                 return ACTION_RECENT_NEXT;
             }
             return ACTION_NEXT;
+        }
+        return ACTION_NONE;
+    }
+
+    if (event->type == SDL_JOYAXISMOTION) {
+        int axis = event->jaxis.axis;
+        int value = event->jaxis.value;
+        int idx = -1;
+        Uint32 now;
+
+        if (input_debug) {
+            printf("JOY axis=%d value=%d\n", axis, value);
+            fflush(stdout);
+        }
+
+        /* L2/R2 = digital switches on axis slots: press bounces +/-32767,
+         * release returns NO neutral value. Debounce on TIME — a physical
+         * press is a burst of events; fire only the first event of a burst. */
+        if (axis == 2) {
+            idx = 0; /* L2 */
+        } else if (axis == 5) {
+            idx = 1; /* R2 */
+        }
+        if (idx < 0) {
+            return ACTION_NONE;
+        }
+        if (value < -AXIS_EVENT_THRESHOLD || value > AXIS_EVENT_THRESHOLD) {
+            now = SDL_GetTicks();
+            if ((int)(now - axis_fire_tick[idx]) >= AXIS_DEBOUNCE_MS) {
+                axis_fire_tick[idx] = now;
+                return (idx == 0) ? ACTION_VIEW_TOGGLE : ACTION_SETTINGS_TOGGLE;
+            }
         }
         return ACTION_NONE;
     }
