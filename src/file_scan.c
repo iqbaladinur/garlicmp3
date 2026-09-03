@@ -2,6 +2,7 @@
 #define _GNU_SOURCE
 #endif
 #include "file_scan.h"
+#include "font_cjk.h"
 
 #include <ctype.h>
 #include <dirent.h>
@@ -269,11 +270,12 @@ static void clean_display_name(char *out, size_t out_size, const char *name)
     }
 }
 
-static void copy_clean_text(char *out, size_t out_size, const unsigned char *src, size_t src_size)
+/* Collapse whitespace / drop control chars from a UTF-8 string without
+ * mangling multibyte sequences. Only ASCII space runs collapse; everything
+ * else (kana/kanji) is preserved. */
+static void utf8_clean_text(char *out, size_t out_size, const char *in)
 {
-    size_t start = 0;
-    size_t end = src_size;
-    size_t i;
+    const char *p = in;
     size_t j = 0;
     int last_space = 1;
 
@@ -281,38 +283,59 @@ static void copy_clean_text(char *out, size_t out_size, const unsigned char *src
         return;
     }
     out[0] = '\0';
-
-    while (start < src_size && (src[start] == '\0' || isspace(src[start]))) {
-        start++;
-    }
-    while (end > start && (src[end - 1] == '\0' || isspace(src[end - 1]))) {
-        end--;
+    if (!in) {
+        return;
     }
 
-    for (i = start; i < end && j + 1 < out_size; i++) {
-        unsigned char c = src[i];
-        if (c < 32 || c > 126) {
-            c = ' ';
+    while (*p && j + 4 < out_size) {
+        uint32_t cp = utf8_decode(&p);
+        if (cp == 0) {
+            break;
         }
-        if (isspace(c)) {
+        if (cp == (uint32_t)-1) {
+            continue;
+        }
+        if (cp < 32 || cp == 127) {
+            continue; /* control characters dropped */
+        }
+        if (cp == ' ') {
             if (!last_space && j + 1 < out_size) {
                 out[j++] = ' ';
             }
             last_space = 1;
-        } else {
-            out[j++] = (char)c;
-            last_space = 0;
+            continue;
         }
+        j += (size_t)utf8_encode(cp, out + j);
+        last_space = 0;
+    }
+    while (j > 0 && out[j - 1] == ' ') {
+        j--;
     }
     out[j] = '\0';
 }
 
+/* Raw tag bytes (ID3v1 / ID3v2 encoding-0): decode whatever the file really
+ * holds (ASCII, Shift-JIS, mislabeled UTF-8, or Latin-1) into clean UTF-8. */
+static void copy_clean_text(char *out, size_t out_size, const unsigned char *src, size_t src_size)
+{
+    char tmp[TRACK_NAME_MAX * 2 + 8];
+
+    if (!out || out_size == 0) {
+        return;
+    }
+    out[0] = '\0';
+    if (!src || src_size == 0) {
+        return;
+    }
+
+    utf8_from_enc0(src, src_size, tmp, sizeof(tmp));
+    utf8_clean_text(out, out_size, tmp);
+}
+
 static void copy_id3v2_text(char *out, size_t out_size, const unsigned char *src, size_t src_size)
 {
-    size_t i;
-    size_t j = 0;
     unsigned char encoding;
-    int last_space = 1;
+    char tmp[TRACK_NAME_MAX * 2 + 8];
 
     if (!out || out_size == 0) {
         return;
@@ -327,37 +350,13 @@ static void copy_id3v2_text(char *out, size_t out_size, const unsigned char *src
     src_size--;
 
     if (encoding == 1 || encoding == 2) {
-        if (src_size >= 2 &&
-            ((src[0] == 0xff && src[1] == 0xfe) || (src[0] == 0xfe && src[1] == 0xff))) {
-            src += 2;
-            src_size -= 2;
-        }
-        for (i = 0; i + 1 < src_size && j + 1 < out_size; i += 2) {
-            unsigned char c = src[i];
-            if (src[i] == 0 && src[i + 1] != 0) {
-                c = src[i + 1];
-            }
-            if (c < 32 || c > 126) {
-                c = ' ';
-            }
-            if (isspace(c)) {
-                if (!last_space) {
-                    out[j++] = ' ';
-                }
-                last_space = 1;
-            } else {
-                out[j++] = (char)c;
-                last_space = 0;
-            }
-        }
-        while (j > 0 && out[j - 1] == ' ') {
-            j--;
-        }
-        out[j] = '\0';
-        return;
+        /* encoding 1 = UTF-16 with BOM (BE/LE auto), 2 = UTF-16BE no BOM */
+        utf8_from_utf16(src, src_size, encoding == 2 ? 1 : 0, tmp, sizeof(tmp));
+    } else {
+        /* encoding 0 = ISO-8859-1 (often really Shift-JIS), 3 = UTF-8 */
+        utf8_from_enc0(src, src_size, tmp, sizeof(tmp));
     }
-
-    copy_clean_text(out, out_size, src, src_size);
+    utf8_clean_text(out, out_size, tmp);
 }
 
 static int read_id3v2_display_name(const char *path, char *out, size_t out_size)

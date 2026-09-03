@@ -2,7 +2,7 @@
 #define VERSION_H
 
 /* Manual semantic version — bump on each release. */
-#define GARLICMP3_VERSION "1.3.0"
+#define GARLICMP3_VERSION "1.4.0"
 
 /* Git short hash injected by the Makefile (-DGARLICMP3_GIT_HASH=...). */
 #ifndef GARLICMP3_GIT_HASH

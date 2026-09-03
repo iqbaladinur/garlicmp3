@@ -50,7 +50,7 @@ if [ ! -f /tmp/sdl/lib/libSDL.a ]; then
   make install >/dev/null 2>&1
 fi
 echo "== compiling harness =="
-gcc -O2 -o /tmp/preview /src/tools/preview.c /src/src/settings.c /src/src/ui_sdl.c /src/src/album_art.c \
+gcc -O2 -o /tmp/preview /src/tools/preview.c /src/src/settings.c /src/src/ui_sdl.c /src/src/album_art.c /src/src/font_cjk.c /src/src/font_cjk_tables.c \
   -I/tmp/sdl/include -I/src/src -L/tmp/sdl/lib -lSDL -lm
 echo "== rendering =="
 cd /out && SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy /tmp/preview

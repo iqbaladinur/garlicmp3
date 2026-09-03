@@ -30,6 +30,8 @@ SRCS := \
 	src/input.c \
 	src/settings.c \
 	src/album_art.c \
+	src/font_cjk.c \
+	src/font_cjk_tables.c \
 	src/ui_sdl.c
 
 OBJS := $(SRCS:src/%.c=build/%.o)
@@ -90,6 +92,8 @@ test-host:
 	./build/test_settings
 	$(HOST_CC) $(HOST_CFLAGS) -o build/test_audio tests/test_audio.c src/audio_mpg123.c
 	./build/test_audio
+	$(HOST_CC) $(HOST_CFLAGS) -o build/test_font tests/test_font_lookup.c src/font_cjk.c src/font_cjk_tables.c
+	./build/test_font
 
 .PHONY: test-integration
 test-integration:

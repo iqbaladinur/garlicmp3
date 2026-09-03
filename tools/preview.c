@@ -10,18 +10,19 @@
 static void init_list(TrackList *tl)
 {
     static const char *names[] = {
-        "Midnight City", "Blinding Lights",
-        "Rock'n Roll, Morning Light Falls on You", "Disconnected",
-        "Vapor Trail", "Synthwave Dreams", "Neon Drive",
-        "Sunset Boulevard", "Crimson Tide", "Golden Hour",
-        "Electric Youth", "Faded Memories"
+        "Midnight City", "宇多田ヒカル - First Love",
+        "RADWIMPS 前前前世 (movie ver.)", "米津玄師 - Lemon (J-POP)",
+        "YOASOBI - 夜に駆ける", "Disconnected",
+        "君の名は。 スパークル", "Sunset Boulevard",
+        "東京事変 - 群青日和", "Golden Hour",
+        "Aimer - カタオモイ", "King Gnu - 白日 (Hakujitsu)"
     };
     int i;
 
     memset(tl, 0, sizeof(*tl));
     for (i = 0; i < 12; i++) {
         snprintf(tl->tracks[i].display_name, sizeof(tl->tracks[i].display_name), "%s", names[i]);
-        snprintf(tl->tracks[i].folder, sizeof(tl->tracks[i].folder), "80s Hits");
+        snprintf(tl->tracks[i].folder, sizeof(tl->tracks[i].folder), "J-Pop / アニメ");
         tl->tracks[i].duration_seconds = 180 + i * 37;
         tl->tracks[i].bitrate_kbps = (i % 3 == 0) ? 128 : ((i % 3 == 1) ? 320 : 192);
         tl->tracks[i].vbr = (i % 4 == 0);
