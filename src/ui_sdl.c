@@ -1024,7 +1024,7 @@ static const char *const help_rows[][2] = {
     { "D-Pad Up/Down", "Navigate / folder jump (Sel)" },
     { "D-Pad L/R",     "Prev / next track" },
     { "A",             "Play" },
-    { "B",             "Stop / close" },
+    { "B",             "Stop (list) / back (player)" },
     { "X",             "Pause / resume" },
     { "Y",             "Favorite toggle" },
     { "Sel+Y",         "Favorites-only mode" },
