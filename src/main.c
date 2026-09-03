@@ -1019,6 +1019,25 @@ static int dispatch_action(InputAction action, int *screen, int *view_mode, Sett
         }
         return 0; /* consume everything else while help is open */
     }
+    /* Player view (now-playing): B = back ke list, musik TETAP jalan.
+       Di sini screen udah pasti SCREEN_LIBRARY (settings/help handle B duluan). */
+    if (action == ACTION_STOP && *view_mode == 1) {
+        *view_mode = 0;
+        message[0] = '\0';
+        return 0;
+    }
+    /* List view: A = play lagu terpilih → langsung pindah ke now-playing
+       (single-track) view. Deteksi sukses: play_selected set *playing = *selected
+       kalau audio beneran jalan; kalau ke-block filter / gagal, *playing gak
+       nyampe ke selected jadi gak usah pindah. */
+    if (action == ACTION_PLAY && *view_mode == 0) {
+        int rc = handle_action(action, list, selected, playing, repeat_mode, favorites_only, running, *debug, shuffle_history, recent, favorites_path, recent_path, message, message_size);
+        if (*selected >= 0 && *playing == *selected) {
+            *view_mode = 1;
+            message[0] = '\0';
+        }
+        return rc;
+    }
     return handle_action(action, list, selected, playing, repeat_mode, favorites_only, running, *debug, shuffle_history, recent, favorites_path, recent_path, message, message_size);
 }
 
