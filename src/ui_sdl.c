@@ -207,11 +207,15 @@ static int text_has_wide(const char *s)
     return 0;
 }
 
-/* Codepoint pixel width. In wide mode all glyphs are 16px; the legacy ASCII
- * path uses CHAR_W*scale per byte. */
-static int cp_px_wide(uint32_t cp)
+/* Codepoint pixel width in wide mode. CJK glyphs are native 16px; ASCII is
+ * sized to match the surrounding pure-ASCII text at the same scale so that a
+ * row containing Japanese keeps Latin characters looking like its neighbours
+ * (8px at scale 1 in list rows, 16px at scale 2 in the now-playing title). */
+static int cp_px_wide(uint32_t cp, int scale)
 {
-    (void)cp;
+    if (cp < 0x80) {
+        return CHAR_W * scale;
+    }
     return 16;
 }
 
@@ -234,7 +238,7 @@ static int text_px_w(const char *s, int scale)
         if (cp == 0 || cp == (uint32_t)-1) {
             break;
         }
-        w += cp_px_wide(cp);
+        w += cp_px_wide(cp, scale);
     }
     return w;
 }
@@ -302,39 +306,51 @@ static void draw_char_scaled(int x, int y, char c, Uint32 fg, int scale)
     }
 }
 
-/* Draw one codepoint in wide mode at 16x16 cell origin (x,y). Wide glyphs
- * are 16px tall while the legacy 8px ASCII cell sits in a 17px row whose
- * selection highlight starts 5px ABOVE the row top. To keep the 16px glyphs
- * vertically centered in the same slot and avoid clipping by the highlight of
- * the row below, everything in wide mode is shifted up by 4px. */
-static void draw_wide_cp(int x, int y, uint32_t cp, Uint32 fg)
+/* Draw one codepoint in wide mode at (x,y) cell origin. ASCII glyphs are
+ * rendered at the native legacy size for the given scale (8px at scale 1, so
+ * a row containing Japanese keeps its Latin characters looking exactly like
+ * pure-ASCII neighbour rows; 16px at scale 2, matching scaled titles).
+ * CJK glyphs are 16x16; at scale 1 they are shifted up 4px so they stay
+ * vertically centered in the 17px row slot whose selection highlight starts
+ * 5px ABOVE the row top (without the shift the bottom 5px would clip under
+ * the highlight of the row below). At scale 2 (now-playing title) there is
+ * no tight row slot, so CJK sits on the same top edge as the 16px ASCII. */
+static void draw_wide_cp(int x, int y, uint32_t cp, Uint32 fg, int scale)
 {
-    y -= 4;
     if (cp < 0x80) {
         if (cp >= 0x20 && cp != 0x7f) {
-            draw_char_scaled(x, y, (char)cp, fg, 2);
+            if (scale <= 1) {
+                draw_char(x, y, (char)cp, fg);
+            } else {
+                draw_char_scaled(x, y, (char)cp, fg, scale);
+            }
         }
     } else {
+        if (scale <= 1) {
+            y -= 4;
+        }
         draw_cjk_glyph(x, y, cp, fg);
     }
 }
 
 /* Wide-mode text draw: max_px is the pixel budget; returns px consumed. */
-static int draw_text_wide_px(int x, int y, const char *text, Uint32 fg, int max_px)
+static int draw_text_wide_px(int x, int y, const char *text, Uint32 fg, int max_px, int scale)
 {
     const char *p = text;
     int consumed = 0;
 
     while (*p) {
         uint32_t cp = utf8_decode(&p);
+        int w;
         if (cp == 0 || cp == (uint32_t)-1) {
             break;
         }
-        if (max_px > 0 && consumed + cp_px_wide(cp) > max_px) {
+        w = cp_px_wide(cp, scale);
+        if (max_px > 0 && consumed + w > max_px) {
             break;
         }
-        draw_wide_cp(x + consumed, y, cp, fg);
-        consumed += cp_px_wide(cp);
+        draw_wide_cp(x + consumed, y, cp, fg, scale);
+        consumed += w;
     }
     return consumed;
 }
@@ -354,7 +370,7 @@ static void draw_text(int x, int y, const char *text, Uint32 fg, int max_chars)
         return;
     }
 
-    draw_text_wide_px(x, y, text, fg, max_chars > 0 ? max_chars * CHAR_W : 0);
+    draw_text_wide_px(x, y, text, fg, max_chars > 0 ? max_chars * CHAR_W : 0, 1);
 }
 
 static void draw_text_right(int right_x, int y, const char *text, Uint32 fg, int max_chars)
@@ -379,7 +395,7 @@ static void draw_text_right(int right_x, int y, const char *text, Uint32 fg, int
     if (max_chars > 0 && w > max_chars * CHAR_W) {
         w = max_chars * CHAR_W;
     }
-    draw_text_wide_px(right_x - w, y, text, fg, max_chars > 0 ? max_chars * CHAR_W : 0);
+    draw_text_wide_px(right_x - w, y, text, fg, max_chars > 0 ? max_chars * CHAR_W : 0, 1);
 }
 
 static void draw_text_scaled(int x, int y, const char *text, Uint32 fg, int max_chars, int scale)
@@ -397,9 +413,10 @@ static void draw_text_scaled(int x, int y, const char *text, Uint32 fg, int max_
         return;
     }
 
-    /* Wide strings always render 16px glyphs; ASCII is drawn at scale 2
-     * (== CHAR_W*2), CJK glyphs are native 16x16. */
-    draw_text_wide_px(x, y, text, fg, max_chars > 0 ? max_chars * CHAR_W * (scale >= 2 ? 2 : 1) : 0);
+    /* Wide strings at scale 2 (now-playing title): ASCII is drawn at scale 2
+     * (== CHAR_W*2) and CJK glyphs are native 16x16, so the whole title is
+     * uniformly 16px tall. */
+    draw_text_wide_px(x, y, text, fg, max_chars > 0 ? max_chars * CHAR_W * scale : 0, scale);
 }
 
 static void draw_marquee_text(int x, int y, const char *text, Uint32 fg, int max_chars, int active)
@@ -448,7 +465,7 @@ static void draw_marquee_text(int x, int y, const char *text, Uint32 fg, int max
         }
 
         if (!active || full_px <= budget_px) {
-            draw_text_wide_px(x, y, text, fg, budget_px);
+            draw_text_wide_px(x, y, text, fg, budget_px, 1);
             return;
         }
 
@@ -458,23 +475,33 @@ static void draw_marquee_text(int x, int y, const char *text, Uint32 fg, int max
             int drawn = 0;
             int i = step;
             int loops = 0;
-            while (drawn + 16 <= budget_px && loops < 300) {
+            while (drawn < budget_px && loops < 300) {
                 uint32_t cp;
+                int w;
                 loops++;
                 if (i < n) {
                     cp = cps[i];
+                    w = cp_px_wide(cp, 1);
                     i++;
                 } else if (i < n + 2) {
-                    draw_wide_cp(x + drawn, y, ' ', fg);
-                    drawn += 16;
+                    cp = ' ';
+                    w = cp_px_wide(' ', 1);
                     i++;
+                    if (drawn + w > budget_px) {
+                        break;
+                    }
+                    draw_wide_cp(x + drawn, y, cp, fg, 1);
+                    drawn += w;
                     continue;
                 } else {
                     i = 0;
                     continue;
                 }
-                draw_wide_cp(x + drawn, y, cp, fg);
-                drawn += cp_px_wide(cp);
+                if (drawn + w > budget_px) {
+                    break;
+                }
+                draw_wide_cp(x + drawn, y, cp, fg, 1);
+                drawn += w;
             }
         }
     }
