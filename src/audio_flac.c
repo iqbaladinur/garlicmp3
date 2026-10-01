@@ -26,9 +26,10 @@
 #endif
 
 #define CHUNK_FRAMES 1024
-#define PIPE_BYTES 16384           /* keep pause / stop latency short */
-#define DEV_BUFFER "0.2"           /* out123 --devbuffer, seconds */
-#define DEV_BUFFER_MS 200
+#define PIPE_BYTES 32768           /* ~90 ms at 96 kHz stereo, ~190 ms at 44.1 kHz */
+#define DEV_BUFFER "0.3"           /* out123 --devbuffer, seconds */
+#define DEV_BUFFER_MS 300
+#define OPEN_RETRIES 3             /* out123 failing to open the device at track start */
 #define MAX_DRAINING 4
 
 static pthread_mutex_t mu = PTHREAD_MUTEX_INITIALIZER;
@@ -51,6 +52,9 @@ static int rate = 0;
 static int channels = 0;
 static int bits = 0;
 static char last_error[192] = "";
+static char cur_path[1024] = "";
+static int open_retries = 0;
+static int retrying = 0;
 
 /* out123 child. Only touched from the main thread. */
 static pid_t out_pid = -1;
@@ -399,6 +403,10 @@ int flac_play(const char *path, int start_seconds)
     last_error[0] = '\0';
     pthread_mutex_unlock(&mu);
 
+    snprintf(cur_path, sizeof(cur_path), "%s", path);
+    if (!retrying) {
+        open_retries = 0;
+    }
     printf("flac: play %s %d-bit/%d Hz/%dch%s%s start=%d\n", path, bits, rate, channels,
            bits > 16 ? " (TPDF dither to 16-bit)" : " (bit-exact)", reuse ? " gapless" : "", start_seconds);
 
@@ -450,6 +458,30 @@ void flac_poll(void)
 
     if (stop_failed) {
         char keep[sizeof(last_error)];
+        unsigned long long early;
+        int seconds;
+
+        pthread_mutex_lock(&mu);
+        early = frames_out;
+        seconds = rate > 0 ? (int)(start_frame / (unsigned long long)rate) : 0;
+        pthread_mutex_unlock(&mu);
+
+        /* Output died before playing anything (device still held by
+         * someone else for a moment): retry the same track a few times. */
+        if (early <= (unsigned long long)(PIPE_BYTES / 2) && open_retries < OPEN_RETRIES && cur_path[0]) {
+            char path[sizeof(cur_path)];
+            open_retries++;
+            snprintf(path, sizeof(path), "%s", cur_path);
+            printf("flac: output not ready, retry %d/%d\n", open_retries, OPEN_RETRIES);
+            flac_stop(0);
+            usleep(200000 * (useconds_t)open_retries);
+            retrying = 1;
+            if (flac_play(path, seconds) == 0) {
+                retrying = 0;
+                return;
+            }
+            retrying = 0;
+        }
         snprintf(keep, sizeof(keep), "%s", last_error);
         fprintf(stderr, "%s\n", keep);
         flac_stop(0);

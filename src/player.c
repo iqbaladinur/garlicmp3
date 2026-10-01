@@ -12,9 +12,11 @@ static Backend current = BACKEND_MPG123;
 static int start(const char *path, int seconds, int from_seconds)
 {
     if (flac_is_path(path)) {
-        if (current != BACKEND_FLAC) {
-            audio_stop();
-        }
+        /* mpg123 keeps the ALSA device open after STOP, and the RG35XX has
+         * no software mixing, so out123 could not open it ("cannot open
+         * device default"). Quit mpg123 entirely (and wait for it) to free
+         * the device; the next MP3 play respawns it with the same settings. */
+        audio_shutdown();
         current = BACKEND_FLAC;
         return flac_play(path, seconds);
     }
