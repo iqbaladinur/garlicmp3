@@ -12,6 +12,8 @@
 #include <strings.h>
 #include <sys/stat.h>
 
+#include "flac_meta.h"
+
 static int has_mp3_ext(const char *name)
 {
     const char *dot = strrchr(name, '.');
@@ -19,6 +21,12 @@ static int has_mp3_ext(const char *name)
         return 0;
     }
     return strcasecmp(dot, ".mp3") == 0;
+}
+
+static int has_flac_ext(const char *name)
+{
+    const char *dot = strrchr(name, '.');
+    return dot && strcasecmp(dot, ".flac") == 0;
 }
 
 static int is_regular_or_unknown(const char *path)
@@ -239,6 +247,8 @@ static void clean_display_name(char *out, size_t out_size, const char *name)
     end = len;
     if (len > 4 && strcasecmp(name + len - 4, ".mp3") == 0) {
         end = len - 4;
+    } else if (len > 5 && strcasecmp(name + len - 5, ".flac") == 0) {
+        end = len - 5;
     }
 
     for (i = 0; i < end && j + 1 < out_size; i++) {
@@ -508,11 +518,36 @@ static void folder_display_name(char *out, size_t out_size, const char *dir)
     }
 }
 
+/* FLAC: STREAMINFO + Vorbis comments (already UTF-8). */
+static void fill_flac_track(Track *track, const char *name)
+{
+    FlacMeta meta;
+
+    if (flac_meta_read(track->path, &meta)) {
+        char title[TRACK_NAME_MAX];
+        char artist[TRACK_NAME_MAX];
+        utf8_clean_text(title, sizeof(title), meta.title);
+        utf8_clean_text(artist, sizeof(artist), meta.artist);
+        if (title[0] && artist[0]) {
+            snprintf(track->display_name, sizeof(track->display_name), "%s - %s", artist, title);
+        } else if (title[0]) {
+            snprintf(track->display_name, sizeof(track->display_name), "%s", title);
+        }
+        track->duration_seconds = flac_meta_duration_seconds(&meta);
+        track->lossless_bits = meta.bits_per_sample;
+        track->sample_rate = meta.sample_rate;
+    }
+    if (!track->display_name[0]) {
+        clean_display_name(track->display_name, sizeof(track->display_name), name);
+    }
+}
+
 static void add_track(TrackList *list, const char *dir, const char *name)
 {
     Track *track;
+    int is_flac = has_flac_ext(name);
 
-    if (!has_mp3_ext(name)) {
+    if (!has_mp3_ext(name) && !is_flac) {
         return;
     }
 
@@ -528,6 +563,17 @@ static void add_track(TrackList *list, const char *dir, const char *name)
     }
     snprintf(track->name, sizeof(track->name), "%s", name);
     folder_display_name(track->folder, sizeof(track->folder), dir);
+    track->display_name[0] = '\0';
+    track->bitrate_kbps = 0;
+    track->vbr = 0;
+    track->lossless_bits = 0;
+    track->sample_rate = 0;
+    track->duration_seconds = 0;
+    if (is_flac) {
+        fill_flac_track(track, name);
+        list->count++;
+        return;
+    }
     if (!read_id3v2_display_name(track->path, track->display_name, sizeof(track->display_name)) &&
         !read_id3v1_display_name(track->path, track->display_name, sizeof(track->display_name))) {
         clean_display_name(track->display_name, sizeof(track->display_name), name);

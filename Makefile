@@ -26,6 +26,9 @@ LDLIBS += $(SDL_LIBS) -lpthread -lm
 SRCS := \
 	src/main.c \
 	src/audio_mpg123.c \
+	src/audio_flac.c \
+	src/flac_meta.c \
+	src/player.c \
 	src/file_scan.c \
 	src/input.c \
 	src/settings.c \
@@ -97,6 +100,8 @@ test-host:
 	./build/test_font
 	$(HOST_CC) $(HOST_CFLAGS) -o build/test_spectrum tests/test_spectrum.c src/spectrum.c -lpthread -lm
 	./build/test_spectrum
+	$(HOST_CC) $(HOST_CFLAGS) -o build/test_flac tests/test_flac.c src/flac_meta.c
+	./build/test_flac
 
 .PHONY: test-integration
 test-integration:

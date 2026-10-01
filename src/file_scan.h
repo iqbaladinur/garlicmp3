@@ -14,6 +14,8 @@ typedef struct Track {
     int favorite;
     int bitrate_kbps;
     int vbr;
+    int lossless_bits;      /* FLAC: bits per sample (0 for MP3) */
+    int sample_rate;        /* FLAC: Hz (0 for MP3) */
 } Track;
 
 typedef struct TrackList {

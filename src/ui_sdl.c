@@ -151,8 +151,11 @@ static unsigned char glyph5(char c, int row)
         return row == 3 ? 31 : 0;
     case '_':
         return row == 6 ? 31 : 0;
-    case '/':
-        return 1 << (4 - (row > 4 ? 4 : row));
+    case '/': {
+        /* Bit 4 is the leftmost column: rise from bottom-left to top-right. */
+        static const unsigned char slash[7] = { 1, 1, 2, 4, 8, 16, 16 };
+        return row >= 0 && row < 7 ? slash[row] : 0;
+    }
     case ':':
         return (row == 2 || row == 5) ? 4 : 0;
     case '+':
@@ -1323,8 +1326,13 @@ static void draw_progress_bar(int x, int y, int w, int h, int elapsed, int durat
     }
 }
 
-static void format_bitrate_label(int bitrate_kbps, int vbr, char *out, size_t out_size)
+static void format_bitrate_label(int bitrate_kbps, int vbr, int lossless_bits, int sample_rate, char *out, size_t out_size)
 {
+    if (lossless_bits > 0 && sample_rate > 0) {
+        /* Lossless: bit depth / kHz, e.g. 16/44, 24/96, 24/192. */
+        snprintf(out, out_size, "%d/%d", lossless_bits, sample_rate / 1000);
+        return;
+    }
     if (bitrate_kbps <= 0) {
         out[0] = '\0';
         return;
@@ -1533,7 +1541,7 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
             } else {
                 draw_text(70, y, line, fg, 55);
             }
-            format_bitrate_label(list->tracks[idx].bitrate_kbps, list->tracks[idx].vbr, bitrate_label, sizeof(bitrate_label));
+            format_bitrate_label(list->tracks[idx].bitrate_kbps, list->tracks[idx].vbr, list->tracks[idx].lossless_bits, list->tracks[idx].sample_rate, bitrate_label, sizeof(bitrate_label));
             if (bitrate_label[0]) {
                 draw_text_right(574, y, bitrate_label, row_color, 6);
             }

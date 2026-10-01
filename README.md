@@ -1,6 +1,6 @@
 # Garlic MP3 Player
 
-Minimal MP3 player for the original Anbernic RG35XX / RG35XX OG running GarlicOS 1.4.9.
+Minimal MP3 + FLAC player for the original Anbernic RG35XX / RG35XX OG running GarlicOS 1.4.9.
 
 ![Garlic MP3 Player screenshot](assets/GarlicMP3.png)
 
@@ -9,6 +9,11 @@ Minimal MP3 player for the original Anbernic RG35XX / RG35XX OG running GarlicOS
 - MP3 playback through a single persistent `mpg123 -R` remote-control process: gapless track changes, clean pause/resume, accurate elapsed/duration (VBR included) and precise resume.
 - 3-band equalizer (bass/mid/treble) with presets (Flat, Bass Boost, Bass+Treble, Vocal, Rock, Custom), ReplayGain (`RVA mix`) normalization toggle, and automatic anti-clipping headroom.
 - Separate Settings screen on Select+A: Up/Down selects, Left/Right adjusts, B closes; changes apply live and persist in `state.cfg`.
+- FLAC playback on a separate path from MP3 (dr_flac decoder + `out123`): 16-bit
+  files reach the output bit-exact, 24-bit files are reduced to 16-bit with TPDF
+  dither, and consecutive tracks with the same format play gapless. MP3 playback
+  is untouched and keeps working even if the FLAC path fails. The list shows
+  lossless tracks as bit depth / kHz (e.g. `16/44`, `24/96`).
 - Music scan from `Roms/MUSIC` (SD2), `Roms/APPS/GarlicMP3/MUSIC`, or `/mnt/mmc/MUSIC`.
 - Folder-sorted library with one-level subdirectory scanning.
 - ID3v2/ID3v1 title and artist display, with cleaned filename fallback.
@@ -46,6 +51,7 @@ dist/APPS/
   GarlicMP3/
     garlic-mp3-player
     mpg123
+    out123             # FLAC output (from the mpg123 package)
     assets/            # optional, for background.bmp
     MUSIC/
     README.txt
@@ -59,10 +65,11 @@ Copy `dist/APPS/` contents to the ROMS partition:
 SD2:/Roms/APPS/GarlicMP3.sh
 SD2:/Roms/APPS/GarlicMP3/garlic-mp3-player
 SD2:/Roms/APPS/GarlicMP3/mpg123
+SD2:/Roms/APPS/GarlicMP3/out123
 SD2:/Roms/APPS/GarlicMP3/MUSIC/
 ```
 
-Put MP3 files in any of:
+Put MP3 or FLAC files in any of:
 
 ```text
 SD2:/Roms/MUSIC/
@@ -156,7 +163,12 @@ priority after the first run.
 - **App does not appear in launcher**: verify `GarlicMP3.sh` is directly under `Roms/APPS/` and is executable.
 - **App launches then returns immediately**: check `Roms/APPS/GarlicMP3/garlic-mp3.log`.
 - **UI opens but no sound**: verify `mpg123` exists in the app folder and is executable.
-- **No MP3 files shown**: only `.mp3` files are scanned; check music folder paths above.
+- **No tracks shown**: only `.mp3` and `.flac` files are scanned; check music folder paths above.
+- **FLAC shows "out123 not found" / "audio output stopped"**: copy `out123` next to
+  `mpg123` in the app folder; "audio output stopped" means out123 could not open
+  or lost the audio device (see `garlic-mp3.log`). MP3 playback is unaffected.
+- **FLAC limits (for now)**: mono/stereo only; EQ, ReplayGain, cover art and the
+  music-driven spectrum apply to MP3 only (FLAC shows the animated spectrum).
 - **Track names look wrong**: the app uses ID3v2/ID3v1 title and artist when available; otherwise it cleans up the filename.
 - **Volume does not change**: the app writes `/sys/class/volume/value`; check `garlic-mp3.log` for `volume=` output.
 - **Spectrum bars look synthetic / not following the music**: the track is still
