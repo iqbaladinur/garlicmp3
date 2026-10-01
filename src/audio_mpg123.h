@@ -24,6 +24,7 @@ const char *audio_last_error(void);
 AudioState audio_state(void);
 void audio_poll(void);
 int audio_elapsed_seconds(void);
+int audio_elapsed_ms(void);
 int audio_duration_seconds(void);
 int audio_take_finished(void);
 int audio_headroom_volume_pct(int bass_tenths, int mid_tenths, int treble_tenths);

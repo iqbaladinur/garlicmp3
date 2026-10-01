@@ -25,6 +25,7 @@ static AudioState state = AUDIO_STOPPED;
 static int suppress_stop = 0; /* swallow one @P 0 after LOAD/STOP/@E */
 static int finished = 0;
 static int elapsed_now = 0;
+static int elapsed_ms_now = 0;
 static int duration_now = 0;
 static int volume_step = 5;
 static char last_error[128] = "";
@@ -91,6 +92,7 @@ static void mark_dead(void)
     state = AUDIO_STOPPED;
     suppress_stop = 0;
     elapsed_now = 0;
+    elapsed_ms_now = 0;
     duration_now = 0;
     event_len = 0;
 }
@@ -120,6 +122,7 @@ static void handle_line(const char *line)
         double sec_left = 0.0;
         if (sscanf(line + 3, "%*d %*d %lf %lf", &sec, &sec_left) == 2) {
             elapsed_now = (int)sec;
+            elapsed_ms_now = (int)(sec * 1000.0);
             duration_now = (int)(sec + sec_left + 0.5);
         }
         suppress_stop = 0;
@@ -137,6 +140,7 @@ static void handle_line(const char *line)
             }
             state = AUDIO_STOPPED;
             elapsed_now = 0;
+            elapsed_ms_now = 0;
             duration_now = 0;
         } else if (p == 1) {
             state = AUDIO_PAUSED;
@@ -153,6 +157,7 @@ static void handle_line(const char *line)
         state = AUDIO_STOPPED;
         suppress_stop = 1; /* swallow the trailing @P 0, if any */
         elapsed_now = 0;
+        elapsed_ms_now = 0;
         duration_now = 0;
         return;
     }
@@ -289,6 +294,7 @@ static int spawn_player(void)
     state = AUDIO_STOPPED;
     suppress_stop = 0;
     elapsed_now = 0;
+    elapsed_ms_now = 0;
     duration_now = 0;
 
     for (i = 0; i < 100; i++) { /* up to 1s for the @R banner */
@@ -390,6 +396,7 @@ static int audio_play_internal(const char *path, int start_seconds)
     finished = 0;
     duration_now = 0;
     elapsed_now = start_seconds > 0 ? start_seconds : 0;
+    elapsed_ms_now = elapsed_now * 1000;
     suppress_stop = 1; /* swallow @P 0 from any replaced track */
 
     if (start_seconds > 1) {
@@ -443,6 +450,7 @@ void audio_stop(void)
     state = AUDIO_STOPPED;
     finished = 0;
     elapsed_now = 0;
+    elapsed_ms_now = 0;
     duration_now = 0;
 }
 
@@ -461,6 +469,12 @@ int audio_elapsed_seconds(void)
 {
     audio_poll();
     return elapsed_now;
+}
+
+int audio_elapsed_ms(void)
+{
+    audio_poll();
+    return elapsed_ms_now;
 }
 
 int audio_duration_seconds(void)
@@ -584,6 +598,7 @@ void audio_test_reset(void)
     suppress_stop = 0;
     finished = 0;
     elapsed_now = 0;
+    elapsed_ms_now = 0;
     duration_now = 0;
     event_len = 0;
     last_error[0] = '\0';
@@ -600,6 +615,7 @@ void audio_test_begin_track(void)
     suppress_stop = 1;
     finished = 0;
     elapsed_now = 0;
+    elapsed_ms_now = 0;
     duration_now = 0;
 }
 

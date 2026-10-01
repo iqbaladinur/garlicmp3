@@ -48,7 +48,13 @@ echo "Copying static mpg123 from Miyoo toolchain..."
 docker run --rm \
   -v "$PWD/dist/APPS/GarlicMP3:/out" \
   "docker.io/nfriedly/miyoo-toolchain:latest" \
-  sh -lc 'cp /opt/miyoo/arm-buildroot-linux-musleabi/sysroot/usr/bin/mpg123 /out/mpg123 && chmod +x /out/mpg123'
+  sh -lc 'cp /opt/miyoo/arm-buildroot-linux-musleabi/sysroot/usr/bin/mpg123 /out/mpg123 && chmod +x /out/mpg123
+         # out123 (same package) is the FLAC output path; optional, MP3 works without it.
+         if [ -f /opt/miyoo/arm-buildroot-linux-musleabi/sysroot/usr/bin/out123 ]; then
+           cp /opt/miyoo/arm-buildroot-linux-musleabi/sysroot/usr/bin/out123 /out/out123 && chmod +x /out/out123
+         else
+           echo "WARNING: out123 not found in toolchain image; FLAC playback will report out123 missing" >&2
+         fi'
 
 echo "Done."
 find dist/APPS -type f -printf '%p %s bytes\n'
