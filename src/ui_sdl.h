@@ -13,4 +13,12 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
 void ui_render_settings(const Settings *settings, AudioState state, const char *message);
 void ui_render_help(AudioState state);
 
+/* Real spectrum for the now-playing visualizer. The source returns 1 and
+ * fills up to nbands levels (0..255, low to high frequency) for playback
+ * time ms, or 0 when it has no data yet (the UI then animates on its own). */
+typedef int (*UiSpectrumSource)(int ms, unsigned char *bands, int nbands);
+void ui_set_spectrum_source(UiSpectrumSource source, int latency_ms);
+/* Playback position in ms (from mpg123 @F); smoothed between updates. */
+void ui_set_playback_ms(int ms);
+
 #endif

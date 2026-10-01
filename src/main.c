@@ -2,6 +2,7 @@
 #include "file_scan.h"
 #include "input.h"
 #include "settings.h"
+#include "spectrum.h"
 #include "ui_sdl.h"
 #include "version.h"
 
@@ -41,6 +42,8 @@ typedef struct AppConfig {
     int eq_mid;
     int eq_treble;
     int rva;
+    int spectrum_background;
+    int spectrum_latency_ms;
 } AppConfig;
 
 typedef struct RecentList {
@@ -139,6 +142,17 @@ static void config_file_path(char *out, size_t out_size, const char *argv0)
     snprintf(out, out_size, "%.*s/config.cfg", (int)(slash - argv0), argv0);
 }
 
+static void cache_dir_path(char *out, size_t out_size, const char *argv0)
+{
+    const char *slash = argv0 ? strrchr(argv0, '/') : NULL;
+
+    if (!slash) {
+        snprintf(out, out_size, "cache");
+        return;
+    }
+    snprintf(out, out_size, "%.*s/cache", (int)(slash - argv0), argv0);
+}
+
 static void trim_line(char *s)
 {
     size_t n;
@@ -168,6 +182,8 @@ static void load_config(const char *path, AppConfig *config)
     config->eq_mid = 10;
     config->eq_treble = 10;
     config->rva = 0;
+    config->spectrum_background = 1;
+    config->spectrum_latency_ms = 150;
 
     fp = fopen(path, "r");
     if (!fp) {
@@ -205,6 +221,15 @@ static void load_config(const char *path, AppConfig *config)
             config->eq_treble = settings_clamp_band(atoi(line + 10));
         } else if (strncmp(line, "rva=", 4) == 0) {
             config->rva = atoi(line + 4) ? 1 : 0;
+        } else if (strncmp(line, "spectrum_background=", 20) == 0) {
+            config->spectrum_background = atoi(line + 20) ? 1 : 0;
+        } else if (strncmp(line, "spectrum_latency_ms=", 20) == 0) {
+            config->spectrum_latency_ms = atoi(line + 20);
+            if (config->spectrum_latency_ms < 0) {
+                config->spectrum_latency_ms = 0;
+            } else if (config->spectrum_latency_ms > 2000) {
+                config->spectrum_latency_ms = 2000;
+            }
         }
     }
 
@@ -1127,6 +1152,27 @@ int main(int argc, char **argv)
     load_favorites(favorites_path, &list);
     load_recent(recent_path, &list, &recent);
     printf("scan done tracks=%d truncated=%d\n", list.count, list.truncated);
+
+    /* Spectrum analysis: the playing track on demand, the rest of the
+     * library in the background; results cached under cache/. */
+    {
+        char cache_dir[TRACK_PATH_MAX];
+        cache_dir_path(cache_dir, sizeof(cache_dir), argv && argv[0] ? argv[0] : NULL);
+        if (spectrum_init(cache_dir) == 0) {
+            const char **paths = (const char **)malloc(sizeof(char *) * (size_t)(list.count > 0 ? list.count : 1));
+            int i;
+            spectrum_set_background(config.spectrum_background);
+            if (paths) {
+                for (i = 0; i < list.count; i++) {
+                    paths[i] = list.tracks[i].path;
+                }
+                spectrum_set_library(paths, list.count);
+                free(paths);
+            }
+            ui_set_spectrum_source(spectrum_sample, config.spectrum_latency_ms);
+        }
+        printf("spectrum cache: %s background=%d latency_ms=%d\n", cache_dir, config.spectrum_background, config.spectrum_latency_ms);
+    }
     if (saved_state.volume >= 0) {
         audio_set_volume(saved_state.volume);
     }
@@ -1161,6 +1207,9 @@ int main(int argc, char **argv)
         /* evdev thread input */
         {
             InputAction action = input_poll_joystick();
+            if (action != ACTION_NONE) {
+                spectrum_note_input();
+            }
             if (dispatch_action(action, &screen, &view_mode, &settings, &list, &selected, &playing, &repeat_mode, &favorites_only, &running, &debug, &shuffle_history, &recent, favorites_path, recent_path, message, sizeof(message))) {
                 save_state(state_path, &list, selected, playing, repeat_mode, debug, favorites_only, &settings);
                 last_state_save = SDL_GetTicks();
@@ -1170,6 +1219,9 @@ int main(int argc, char **argv)
         /* SDL event queue (keyboard fallback / SDL_QUIT) */
         while (SDL_PollEvent(&event)) {
             InputAction action = input_event_to_action(&event);
+            if (action != ACTION_NONE) {
+                spectrum_note_input();
+            }
             if (dispatch_action(action, &screen, &view_mode, &settings, &list, &selected, &playing, &repeat_mode, &favorites_only, &running, &debug, &shuffle_history, &recent, favorites_path, recent_path, message, sizeof(message))) {
                 save_state(state_path, &list, selected, playing, repeat_mode, debug, favorites_only, &settings);
                 last_state_save = SDL_GetTicks();
@@ -1188,6 +1240,7 @@ int main(int argc, char **argv)
         if (audio_state() == AUDIO_STOPPED) {
             playing = -1;
         }
+        spectrum_set_active(playing >= 0 && playing < list.count ? list.tracks[playing].path : NULL);
 
         if (debug && SDL_GetTicks() - last_log > 10000) {
             printf("Heartbeat selected=%d tracks=%d state=%d\n", selected, list.count, audio_state());
@@ -1209,12 +1262,14 @@ int main(int argc, char **argv)
         } else if (screen == SCREEN_HELP) {
             ui_render_help(audio_state());
         } else {
+            ui_set_playback_ms(audio_elapsed_ms());
             ui_render(&list, selected, playing, audio_state(), audio_elapsed_seconds(), audio_duration_seconds(), audio_get_volume(), repeat_label(repeat_mode), settings_preset_name(settings.preset), favorites_only, message, view_mode);
         }
         SDL_Delay(33);
     }
 
     save_state(state_path, &list, selected, playing, repeat_mode, debug, favorites_only, &settings);
+    spectrum_shutdown();
     audio_shutdown();
     ui_shutdown();
     input_shutdown();

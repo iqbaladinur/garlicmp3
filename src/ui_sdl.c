@@ -597,6 +597,40 @@ static int tint_rgb[3] = { 200, 134, 20 };
 #define SPEC_BARS 46
 #define SPEC_SEG_PITCH 4
 #define SPEC_SEG_H 3
+#define SPEC_SRC_BANDS 24
+
+static UiSpectrumSource spec_source = NULL;
+static int spec_latency_ms = 0;
+static int play_raw_ms = -1;
+static int play_base_ms = 0;
+static Uint32 play_base_tick = 0;
+
+void ui_set_spectrum_source(UiSpectrumSource source, int latency_ms)
+{
+    spec_source = source;
+    spec_latency_ms = latency_ms;
+}
+
+void ui_set_playback_ms(int ms)
+{
+    if (ms != play_raw_ms) {
+        play_raw_ms = ms;
+        play_base_ms = ms;
+        play_base_tick = SDL_GetTicks();
+    }
+}
+
+/* mpg123 reports position per decoded frame; between reports, advance with
+ * the wall clock (capped) so sampled levels move smoothly. */
+static int playback_ms_now(int playing)
+{
+    int ms = play_base_ms;
+    if (playing) {
+        Uint32 d = SDL_GetTicks() - play_base_tick;
+        ms += d > 250 ? 250 : (int)d;
+    }
+    return ms;
+}
 
 static void draw_spectrum_bg(AudioState state, int x, int base_y, int w, int max_h)
 {
@@ -621,7 +655,14 @@ static void draw_spectrum_bg(AudioState state, int x, int base_y, int w, int max
     static const int bg[3] = { 18, 22, 27 };
     int top[3];
     int cap[3];
+    unsigned char bands[SPEC_SRC_BANDS];
+    int real = 0;
     int i;
+
+    if (playing && spec_source) {
+        int ms = playback_ms_now(1) - spec_latency_ms;
+        real = spec_source(ms < 0 ? 0 : ms, bands, SPEC_SRC_BANDS);
+    }
 
     if (dt < 0.0f) {
         dt = 0.0f;
@@ -645,7 +686,16 @@ static void draw_spectrum_bg(AudioState state, int x, int base_y, int w, int max
         int bx = x0 + i * step;
         int s;
 
-        if (playing) {
+        if (real) {
+            /* Map 24 analysis bands across the bars, linearly interpolated. */
+            float p = fi * (float)(SPEC_SRC_BANDS - 1);
+            int b = (int)p;
+            float f = p - (float)b;
+            float v = b + 1 < SPEC_SRC_BANDS
+                ? (float)bands[b] * (1.0f - f) + (float)bands[b + 1] * f
+                : (float)bands[b];
+            target = v / 255.0f;
+        } else if (playing) {
             float env = 0.92f - 0.5f * fi + 0.18f * sinf(fi * 3.14159f);
             float n = 0.5f
                 + 0.24f * sinf(t * (3.1f + (float)i * 0.37f) + (float)i * 1.7f)
@@ -668,10 +718,10 @@ static void draw_spectrum_bg(AudioState state, int x, int base_y, int w, int max
             peak[i] = target + 0.08f;
             peak_vel[i] = 0.0f;
         } else if (target > level[i]) {
-            float k = dt * 18.0f;
+            float k = dt * (real ? 30.0f : 18.0f);
             level[i] += (target - level[i]) * (k > 1.0f ? 1.0f : k);
         } else {
-            float fall = dt * 1.4f;
+            float fall = dt * (real ? 2.2f : 1.4f);
             level[i] -= (level[i] - target) < fall ? (level[i] - target) : fall;
         }
 

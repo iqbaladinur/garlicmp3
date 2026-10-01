@@ -15,6 +15,7 @@ Minimal MP3 player for the original Anbernic RG35XX / RG35XX OG running GarlicOS
 - Repeat off/all/one, shuffle, pause/resume, previous/next track, and volume control.
 - Favorites with favorites-only playback mode, saved in `favorites.cfg` beside the app.
 - Recent track navigation saved in `recent.cfg`.
+- Now-playing spectrum driven by the actual music: each track is analyzed once (on first play, then the rest of the library in the background) and cached under `cache/`.
 - Resume state saved in `state.cfg`, including selected track, active track, elapsed time, repeat mode, favorites-only mode, debug flag, volume, equalizer preset/bands, and RVA mode.
 - Optional startup defaults through `config.cfg`.
 - No GarlicOS 2, MuOS, Knulli, RG35XX Plus/H/2024, or H700 assumptions.
@@ -136,7 +137,16 @@ repeat_mode=1
 favorites_only=0
 debug=0
 volume_step=2
+spectrum_background=1
+spectrum_latency_ms=150
 ```
+
+- `spectrum_background`: `1` analyzes the rest of the library in the background
+  (low priority, duty-cycled, pauses for 3 s after any button press); `0` only
+  analyzes tracks as they are played.
+- `spectrum_latency_ms`: shifts the visualizer back by this many milliseconds to
+  match the audio output buffer. Raise it if the bars move before the sound,
+  lower it if they lag behind.
 
 Runtime state is still saved in `state.cfg`, so the most recent app state takes
 priority after the first run.
@@ -149,6 +159,10 @@ priority after the first run.
 - **No MP3 files shown**: only `.mp3` files are scanned; check music folder paths above.
 - **Track names look wrong**: the app uses ID3v2/ID3v1 title and artist when available; otherwise it cleans up the filename.
 - **Volume does not change**: the app writes `/sys/class/volume/value`; check `garlic-mp3.log` for `volume=` output.
+- **Spectrum bars look synthetic / not following the music**: the track is still
+  being analyzed (a few seconds on first play) or could not be decoded. Analysis
+  results live in `Roms/APPS/GarlicMP3/cache/*.spc` (about 36 KB per minute of
+  audio); deleting that folder is safe and forces re-analysis.
 - **Controls wrong**: press the button and check `garlic-mp3.log` for `JOY unknown btn=X`, then update `src/input.c`.
 
 ## Alternative Build: Miyoo Toolchain (legacy)
