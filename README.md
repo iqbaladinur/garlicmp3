@@ -1,34 +1,134 @@
 # Garlic MP3 Player
 
-Minimal MP3 + FLAC player for the original Anbernic RG35XX / RG35XX OG running GarlicOS 1.4.9.
+MP3 + lossless FLAC music player for the original Anbernic RG35XX / RG35XX OG
+running GarlicOS 1.4.9.
 
-![Garlic MP3 Player screenshot](assets/GarlicMP3.png)
+![Garlic MP3 Player — now playing](docs/screenshots/now-playing.png)
 
-- Standalone GarlicOS APPS launcher.
-- SDL 1.2 UI and joystick input, patched specifically for RG35XX hardware.
-- MP3 playback through a single persistent `mpg123 -R` remote-control process: gapless track changes, clean pause/resume, accurate elapsed/duration (VBR included) and precise resume.
-- 3-band equalizer (bass/mid/treble) with presets (Flat, Bass Boost, Bass+Treble, Vocal, Rock, Custom), ReplayGain (`RVA mix`) normalization toggle, and automatic anti-clipping headroom.
-- Separate Settings screen on Select+A: Up/Down selects, Left/Right adjusts, B closes; changes apply live and persist in `state.cfg`.
-- FLAC playback on a separate path from MP3 (dr_flac decoder + `out123`): with
-  EQ Flat and RVA off, 16-bit files reach the output bit-exact; EQ, ReplayGain
-  or 24-bit sources go through a fixed-point stage and are TPDF-dithered to
-  16-bit. Consecutive tracks with the same format play gapless. MP3 playback is
-  untouched and keeps working even if the FLAC path fails. The list shows
-  lossless tracks as bit depth / kHz (e.g. `16/44`, `24/96`).
-- FLAC gets the same 3-band EQ split and anti-clip headroom as MP3, ReplayGain
-  from `REPLAYGAIN_TRACK_GAIN`/`PEAK` (RVA setting), embedded cover art, and the
-  music-driven spectrum. Tracks without embedded art (MP3 or FLAC) fall back to
-  `cover.jpg` / `folder.jpg` / `front.jpg` (or `.png`) next to the file.
-- Music scan from `Roms/MUSIC` (SD2), `Roms/APPS/GarlicMP3/MUSIC`, or `/mnt/mmc/MUSIC`.
-- Folder-sorted library with one-level subdirectory scanning.
-- ID3v2/ID3v1 title and artist display, with cleaned filename fallback.
-- Repeat off/all/one, shuffle, pause/resume, previous/next track, and volume control.
-- Favorites with favorites-only playback mode, saved in `favorites.cfg` beside the app.
-- Recent track navigation saved in `recent.cfg`.
-- Now-playing spectrum driven by the actual music: each track is analyzed once (on first play, then the rest of the library in the background) and cached under `cache/`.
-- Resume state saved in `state.cfg`, including selected track, active track, elapsed time, repeat mode, favorites-only mode, debug flag, volume, equalizer preset/bands, and RVA mode.
-- Optional startup defaults through `config.cfg`.
+| Library | Settings | Help |
+|---|---|---|
+| ![Library](docs/screenshots/library.png) | ![Settings](docs/screenshots/settings.png) | ![Help](docs/screenshots/help.png) |
+
+## Features
+
+**Playback**
+- MP3 through a single persistent `mpg123 -R` process: gapless track changes,
+  clean pause/resume, accurate elapsed/duration (VBR included) and precise resume.
+- FLAC on its own path (dr_flac decoder + `out123`), separate from MP3, so a
+  FLAC problem never breaks MP3 playback.
+  - 16-bit FLAC reaches the output **bit-exact** when EQ is Flat and RVA is off.
+  - 24-bit FLAC, or any FLAC with EQ/ReplayGain, goes through a fixed-point
+    stage and is TPDF-dithered to 16-bit.
+  - Gapless between consecutive tracks with the same format.
+- 3-band equalizer (bass/mid/treble) with presets (Flat, Bass Boost,
+  Bass+Treble, Vocal, Rock, Custom) and automatic anti-clipping headroom, for
+  both MP3 and FLAC.
+- ReplayGain normalization (RVA): MP3 via mpg123 `RVA mix`, FLAC via
+  `REPLAYGAIN_TRACK_GAIN` / `REPLAYGAIN_TRACK_PEAK`.
+- Repeat off/all/one, shuffle, previous/next, favorites and favorites-only
+  mode, recent-track navigation, volume control.
+
+**Now playing**
+- Cover art from the file (MP3 APIC / FLAC PICTURE), or `cover.jpg`,
+  `folder.jpg`, `front.jpg` (or `.png`) next to the track, shown as a rounded
+  card with a soft shadow and a glow tinted by the cover.
+- Spectrum visualizer driven by the actual music: each track is analyzed once
+  (on first play, then the rest of the library in the background at low
+  priority) and cached under `cache/`.
+
+**Library**
+- Scans `Roms/MUSIC` (SD2), `Roms/APPS/GarlicMP3/MUSIC`, or `/mnt/mmc/MUSIC`,
+  plus one subdirectory level; folder-sorted.
+- Titles/artists from ID3v2/ID3v1 (MP3) or Vorbis comments (FLAC), with a
+  cleaned filename fallback; Japanese titles render with a built-in CJK font.
+- The list shows the bitrate for MP3 (`320K`, `VBR`) and bit depth / kHz for
+  FLAC (`16/44`, `24/96`).
+
+**App**
+- Standalone GarlicOS APPS launcher; SDL 1.2 UI and joystick input patched
+  specifically for RG35XX hardware.
+- Settings screen (R2 or Select+A): changes apply live and persist.
+- Resume state in `state.cfg`; optional startup defaults in `config.cfg`.
 - No GarlicOS 2, MuOS, Knulli, RG35XX Plus/H/2024, or H700 assumptions.
+
+## Install
+
+1. Download `GarlicMP3-vX.Y.Z-rg35xx.zip` from the
+   [Releases](https://github.com/iqbaladinur/garlicmp3/releases) page (or build
+   it, see below) and extract it.
+2. Copy the contents of `APPS/` to the ROMS partition:
+
+   ```text
+   SD2:/Roms/APPS/GarlicMP3.sh
+   SD2:/Roms/APPS/GarlicMP3/garlic-mp3-player
+   SD2:/Roms/APPS/GarlicMP3/mpg123
+   SD2:/Roms/APPS/GarlicMP3/out123
+   SD2:/Roms/APPS/GarlicMP3/MUSIC/
+   ```
+
+3. Put `.mp3` / `.flac` files in any of:
+
+   ```text
+   SD2:/Roms/MUSIC/
+   SD2:/Roms/APPS/GarlicMP3/MUSIC/
+   SD1:/mnt/mmc/MUSIC/
+   ```
+
+## Controls
+
+| Button | Action |
+|--------|--------|
+| D-pad Up/Down | Select track (hold to repeat) |
+| D-pad Left/Right | Previous / next track |
+| A | Play selected track and open Now Playing |
+| B | Stop (in the list) / back to the list, music keeps playing (in Now Playing) |
+| X | Pause / resume |
+| Y | Toggle favorite |
+| L / R | Volume down / up |
+| START | Shuffle play |
+| SELECT (tap) | Cycle repeat mode |
+| SELECT + D-pad Up/Down | Previous / next folder |
+| SELECT + D-pad Left/Right | Previous / next recent track |
+| SELECT + X, or L2 | Toggle list / Now Playing view |
+| SELECT + Y | Toggle favorites-only mode |
+| SELECT + A, or R2 | Settings (EQ, RVA, ...) |
+| SELECT + START | Help screen |
+| MENU | Quit |
+
+In Settings: Up/Down selects, Left/Right changes, B closes.
+
+When favorites-only mode is enabled, list navigation and auto-advance skip
+non-favorite tracks. `START` shuffles favorites when favorites-only mode is on or
+when the selected track is a favorite; otherwise it shuffles all tracks.
+
+## Optional Config
+
+Create `Roms/APPS/GarlicMP3/config.cfg` to override startup defaults:
+
+```text
+repeat_mode=1            # 0 off, 1 all, 2 one
+favorites_only=0
+debug=0                  # 1 = verbose input/heartbeat lines in the log
+volume_step=2            # 1..20
+eq_preset=0              # 0 Flat, 1 Bass Boost, 2 Bass+Treble, 3 Vocal, 4 Rock, 5 Custom
+eq_bass=10               # Custom only, tenths (10 = 1.0x)
+eq_mid=10
+eq_treble=10
+rva=0                    # ReplayGain normalization
+spectrum_background=1
+spectrum_latency_ms=150
+```
+
+- `spectrum_background`: `1` analyzes the rest of the library in the background
+  (low priority, duty-cycled, pauses for 3 s after any button press); `0` only
+  analyzes tracks as they are played.
+- `spectrum_latency_ms`: shifts the MP3 visualizer back by this many
+  milliseconds to match the audio output buffer. Raise it if the bars move
+  before the sound, lower it if they lag behind.
+
+Runtime state is saved in `state.cfg`, so the most recent app state takes
+priority after the first run. For a bit-exact FLAC path, keep EQ on Flat and RVA
+off; `garlic-mp3.log` shows `bit-exact` or `TPDF dither` for each FLAC track.
 
 ## Build (recommended)
 
@@ -62,27 +162,9 @@ dist/APPS/
     README.txt
 ```
 
-## Install
-
-Copy `dist/APPS/` contents to the ROMS partition:
-
-```text
-SD2:/Roms/APPS/GarlicMP3.sh
-SD2:/Roms/APPS/GarlicMP3/garlic-mp3-player
-SD2:/Roms/APPS/GarlicMP3/mpg123
-SD2:/Roms/APPS/GarlicMP3/out123
-SD2:/Roms/APPS/GarlicMP3/MUSIC/
-```
-
-Put MP3 or FLAC files in any of:
-
-```text
-SD2:/Roms/MUSIC/
-SD2:/Roms/APPS/GarlicMP3/MUSIC/
-SD1:/mnt/mmc/MUSIC/
-```
-
-The app scans one subdirectory level below those folders.
+Without Docker (static ARM build with zig, also used for the release zips):
+see [AGENTS.md §5.2](AGENTS.md#52-without-docker-eg-cloud-sandbox-where-docker-hub-is-blocked).
+Development, testing and architecture notes are in [AGENTS.md](AGENTS.md).
 
 ## Optional Background Image
 
@@ -92,8 +174,8 @@ The UI can load a custom 640x480 BMP without extra libraries:
 SD2:/Roms/APPS/GarlicMP3/assets/background.bmp
 ```
 
-Use uncompressed BMP. PNG/JPG are intentionally not supported yet to keep the
-GarlicOS build simple.
+Use uncompressed BMP. PNG/JPG are intentionally not supported for the
+background to keep the GarlicOS build simple.
 
 Note the main UI panel covers nearly the whole screen, so the background is
 only visible as a thin colored border/glow around the edges and corners —
@@ -116,53 +198,6 @@ by design, not a bug.
 cp assets/themes/ocean.bmp assets/background.bmp
 ```
 
-## Controls
-
-| Button | Action |
-|--------|--------|
-| D-pad Up/Down | Select track |
-| D-pad Left/Right | Previous / Next track |
-| A | Play selected |
-| B | Stop |
-| X | Pause / Resume |
-| Y | Toggle favorite |
-| L | Volume down |
-| R | Volume up |
-| SELECT | Toggle repeat mode |
-| SELECT + X | Toggle track list / now playing view |
-| SELECT + Y | Toggle favorites-only mode |
-| SELECT + D-pad Up/Down | Previous / next folder |
-| SELECT + D-pad Left/Right | Previous / next recent track |
-| START | Shuffle play |
-| MENU | Quit |
-
-When favorites-only mode is enabled, list navigation and auto-advance skip
-non-favorite tracks. `START` shuffles favorites when favorites-only mode is on or
-when the selected track is a favorite; otherwise it shuffles all tracks.
-
-## Optional Config
-
-Create `Roms/APPS/GarlicMP3/config.cfg` to override startup defaults:
-
-```text
-repeat_mode=1
-favorites_only=0
-debug=0
-volume_step=2
-spectrum_background=1
-spectrum_latency_ms=150
-```
-
-- `spectrum_background`: `1` analyzes the rest of the library in the background
-  (low priority, duty-cycled, pauses for 3 s after any button press); `0` only
-  analyzes tracks as they are played.
-- `spectrum_latency_ms`: shifts the visualizer back by this many milliseconds to
-  match the audio output buffer. Raise it if the bars move before the sound,
-  lower it if they lag behind.
-
-Runtime state is still saved in `state.cfg`, so the most recent app state takes
-priority after the first run.
-
 ## Troubleshooting
 
 - **App does not appear in launcher**: verify `GarlicMP3.sh` is directly under `Roms/APPS/` and is executable.
@@ -172,16 +207,15 @@ priority after the first run.
 - **FLAC shows "out123 not found" / "audio output stopped"**: copy `out123` next to
   `mpg123` in the app folder; "audio output stopped" means out123 could not open
   or lost the audio device (see `garlic-mp3.log`). MP3 playback is unaffected.
-- **FLAC limits**: mono/stereo only. Output is 16-bit; for a bit-exact 16-bit
-  path keep EQ on Flat and RVA off (the log shows `bit-exact` or `TPDF dither`
-  for each track).
-- **Track names look wrong**: the app uses ID3v2/ID3v1 title and artist when available; otherwise it cleans up the filename.
+- **FLAC limits**: mono/stereo only; output is 16-bit.
+- **Track names look wrong**: the app uses ID3v2/ID3v1 (MP3) or Vorbis comment (FLAC) title and artist when available; otherwise it cleans up the filename.
+- **No cover art**: embed a cover in the file, or put `cover.jpg` / `folder.jpg` / `front.jpg` (or `.png`) next to the tracks.
 - **Volume does not change**: the app writes `/sys/class/volume/value`; check `garlic-mp3.log` for `volume=` output.
 - **Spectrum bars look synthetic / not following the music**: the track is still
   being analyzed (a few seconds on first play) or could not be decoded. Analysis
   results live in `Roms/APPS/GarlicMP3/cache/*.spc` (about 36 KB per minute of
   audio); deleting that folder is safe and forces re-analysis.
-- **Controls wrong**: press the button and check `garlic-mp3.log` for `JOY unknown btn=X`, then update `src/input.c`.
+- **Controls wrong**: set `debug=1`, press the button and check `garlic-mp3.log` for `JOY unknown btn=X`, then update `src/input.c`.
 
 ## Alternative Build: Miyoo Toolchain (legacy)
 
