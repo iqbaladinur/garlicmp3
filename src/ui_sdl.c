@@ -1153,11 +1153,66 @@ static void draw_album_visual(int x, int y, int spinning)
     draw_cover_rim(x, y);
 }
 
-static void draw_volume_bar(int x, int y, int w, int h, int volume, Uint32 fg, Uint32 muted, Uint32 hi)
+/* Frosted info card: rounded rect blended over whatever is behind it (no hard
+ * border), anti-aliased corners, a faint top rim light and a darker bottom lip. */
+static void draw_glass_panel(int x, int y, int w, int h, int r)
 {
-    char label[16];
+    int i;
+    int j;
+
+    for (j = 0; j < h; j++) {
+        int corner_row = j < r || j >= h - r;
+        for (i = 0; i < w; i++) {
+            int a = 255;
+            int edge = j == 0 || j == h - 1;
+            if (corner_row && (i < r || i >= w - r)) {
+                float d = sd_round_rect(i + 0.5f, j + 0.5f, (float)w, (float)h, (float)r);
+                float cov = clamp01(0.5f - d);
+                if (cov <= 0.0f) {
+                    continue;
+                }
+                a = (int)(cov * 255.0f);
+                edge = d > -1.2f;
+            }
+            blend_px(x + i, y + j, 30, 37, 45, a * 220 / 255);
+            if (edge && j < h / 2) {
+                blend_px(x + i, y + j, 255, 255, 255, 46 * a / 255);
+            } else if (edge) {
+                blend_px(x + i, y + j, 0, 0, 0, 60 * a / 255);
+            } else if (j == 1) {
+                blend_px(x + i, y + j, 255, 255, 255, 12);
+            }
+        }
+    }
+}
+
+/* Small 9x9 transport glyph next to the status text. */
+static void draw_status_icon(int x, int y, AudioState state, Uint32 color)
+{
+    int k;
+
+    if (state == AUDIO_PLAYING) {
+        for (k = 0; k < 5; k++) {
+            fill_rect(x + k * 2, y + k, 2, 9 - k * 2, color);
+        }
+    } else if (state == AUDIO_PAUSED) {
+        fill_rect(x + 1, y, 3, 9, color);
+        fill_rect(x + 6, y, 3, 9, color);
+    } else {
+        fill_round_rect(x + 1, y + 1, 7, 7, 1, color);
+    }
+}
+
+/* Volume as a slim rising wedge (triangle ramp): thin on the left, taller on
+ * the right, so the shape itself reads as "louder". Filled part in accent,
+ * remainder as a dim track; the sloped top edge is anti-aliased. */
+static void draw_volume_wedge(int x, int y, int w, int h, int volume, Uint32 fg, Uint32 muted)
+{
+    char num[8];
     int fill_w;
     int pct;
+    int i;
+    int k;
 
     if (volume < 0) {
         volume = 0;
@@ -1165,15 +1220,36 @@ static void draw_volume_bar(int x, int y, int w, int h, int volume, Uint32 fg, U
     if (volume > UI_VOLUME_MAX) {
         volume = UI_VOLUME_MAX;
     }
-
     /* No '%' glyph in the bitmap font; a bare 0-100 number reads as percent. */
     pct = (volume * 100 + UI_VOLUME_MAX / 2) / UI_VOLUME_MAX;
-    snprintf(label, sizeof(label), "VOL %d", pct);
-    draw_text(x, y, label, fg, 10);
-    fill_round_rect(x, y + 18, w, h, 4, muted);
+    snprintf(num, sizeof(num), "%d", pct);
+
+    /* Speaker glyph + label, value right-aligned to the wedge's end. */
+    fill_rect(x, y + 2, 3, 4, muted);
+    for (k = 0; k < 4; k++) {
+        fill_rect(x + 3 + k, y + 2 - k, 1, 4 + k * 2, muted);
+    }
+    draw_text(x + 12, y, "VOL", muted, 3);
+    draw_text_right(x + w, y, num, fg, 3);
+
     fill_w = (w * volume) / UI_VOLUME_MAX;
-    if (fill_w > 0) {
-        fill_round_rect(x, y + 18, fill_w, h, 4, hi);
+    for (i = 0; i < w; i++) {
+        float top = (float)h - (2.0f + (float)(h - 2) * (float)i / (float)(w - 1));
+        int full = (int)top;
+        int frac = (int)((1.0f - (top - (float)full)) * 255.0f);
+        int base_y = y + 18;
+        int on = i < fill_w;
+        int r = on ? 255 : 52;
+        int g = on ? 170 : 62;
+        int b = on ? 0 : 72;
+        /* Fade the leading edge of the fill for a soft "head". */
+        if (on && i >= fill_w - 3) {
+            r = mix_ch(r, 255, 0.5f);
+            g = mix_ch(g, 214, 0.5f);
+            b = mix_ch(b, 120, 0.5f);
+        }
+        fill_rect(x + i, base_y + full + 1, 1, h - full - 1, rgb((Uint8)r, (Uint8)g, (Uint8)b));
+        blend_px(x + i, base_y + full, r, g, b, frac);
     }
 }
 
@@ -1273,7 +1349,6 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
     Uint32 muted;
     Uint32 hi;
     Uint32 hi_text;
-    Uint32 info_bg;
     Uint32 panel_shadow;
     const char *now_title = NULL;
 
@@ -1288,7 +1363,6 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
     muted = rgb(151, 163, 174);
     hi = rgb(255, 170, 0);
     hi_text = rgb(22, 24, 32);
-    info_bg = rgb(24, 30, 36);
     panel_shadow = rgb(7, 10, 13);
 
     if (background) {
@@ -1416,24 +1490,32 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
         }
     }
 
-    fill_round_rect(42, 370, 556, 66, 13, panel_shadow);
-    fill_round_rect(38, 366, 556, 66, 13, border);
-    fill_round_rect(40, 368, 552, 62, 11, info_bg);
+    /* Info card: frosted panel, status glyph + text, folder line, a hairline
+     * divider, then the volume wedge. */
+    draw_glass_panel(38, 366, 556, 64, 14);
+    draw_status_icon(56, 384, state, hi);
     if (message && message[0]) {
-        draw_marquee_text(54, 385, message, hi, 47, 1);
+        draw_marquee_text(72, 385, message, hi, 45, 1);
     } else if (list->truncated) {
-        draw_marquee_text(54, 385, "Track list truncated at 512 files", hi, 47, 1);
+        draw_marquee_text(72, 385, "Track list truncated at 512 files", hi, 45, 1);
     } else {
-        draw_text(54, 385, "Ready", hi, 10);
+        draw_text(72, 385, "Ready", hi, 10);
     }
     if (list->count > 0 && selected >= 0 && selected < list->count && list->tracks[selected].folder[0]) {
         char selected_folder[96];
         snprintf(selected_folder, sizeof(selected_folder), "Folder: %s", list->tracks[selected].folder);
-        draw_marquee_text(54, 405, selected_folder, muted, 47, 0);
+        draw_marquee_text(56, 407, selected_folder, muted, 47, 0);
     } else {
-        draw_text(54, 405, "A Play B Stop X Pause Y Fav R2 Settings", muted, 47);
+        draw_text(56, 407, "A Play B Stop X Pause Y Fav R2 Settings", muted, 47);
     }
-    draw_volume_bar(468, 385, 92, 8, volume, fg, rgb(60, 70, 80), hi);
+    {
+        int j;
+        for (j = 380; j < 418; j++) {
+            int a = 60 - (j < 399 ? 399 - j : j - 399) * 3;
+            blend_px(450, j, 255, 255, 255, a > 0 ? a : 0);
+        }
+    }
+    draw_volume_wedge(466, 384, 110, 12, volume, fg, muted);
     draw_text(38, 440, "Menu to quit", muted, 32);
     {
         char version_label[48];
