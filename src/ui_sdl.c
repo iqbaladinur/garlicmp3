@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include <time.h>
 
 #include "album_art.h"
@@ -545,27 +546,177 @@ static void draw_equalizer_bg(AudioState state)
     }
 }
 
-/* EQ strip untuk now playing view: style disamain dengan header EQ (bar gelap
- * tipis 5px, spacing 11, animasi sliding wobble), tetap centered di atas timer bar. */
-static void draw_equalizer_strip(AudioState state, int x, int y, int w)
-{
-    static const unsigned char base[24] = {
-        10, 22, 16, 34, 28, 42, 18, 30,
-        12, 38, 24, 44, 14, 32, 20, 40,
-        26, 18, 36, 16, 30, 22, 42, 12
-    };
-    const int n = 33;
-    const int bw = 5;
-    int i;
-    int step = 11;
-    int x0 = x + (w - (n - 1) * step - bw) / 2;
-    int frame = state == AUDIO_PLAYING ? (int)(SDL_GetTicks() / 95) : 0;
-    Uint32 bar = rgb(25, 33, 40);
+/* ---- 16bpp alpha helpers (screen is always 565, see ui_init) ---- */
 
-    for (i = 0; i < n; i++) {
-        int h = 6 + ((base[(i * 3 + frame) % 24] + frame) % 12);
-        fill_round_rect(x0 + i * step, y - h, bw, h, 2, bar);
+static Uint16 pack565(int r, int g, int b)
+{
+    return (Uint16)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+}
+
+static void blend_px(int x, int y, int r, int g, int b, int a)
+{
+    Uint16 *p;
+    int pr;
+    int pg;
+    int pb;
+
+    if (a <= 0 || x < 0 || y < 0 || x >= screen->w || y >= screen->h) {
+        return;
     }
+    p = (Uint16 *)((Uint8 *)screen->pixels + y * screen->pitch) + x;
+    if (a >= 255) {
+        *p = pack565(r, g, b);
+        return;
+    }
+    pr = (*p >> 11) & 0x1f;
+    pg = (*p >> 5) & 0x3f;
+    pb = *p & 0x1f;
+    pr = (pr << 3) | (pr >> 2);
+    pg = (pg << 2) | (pg >> 4);
+    pb = (pb << 3) | (pb >> 2);
+    pr += ((r - pr) * a) >> 8;
+    pg += ((g - pg) * a) >> 8;
+    pb += ((b - pb) * a) >> 8;
+    *p = pack565(pr, pg, pb);
+}
+
+static int mix_ch(int a, int b, float t)
+{
+    return a + (int)((float)(b - a) * t);
+}
+
+/* Glow/tint color for the now-playing view, derived from the cover art
+ * (falls back to the accent orange). Updated by cover_sync(). */
+static int tint_rgb[3] = { 200, 134, 20 };
+
+/* NOW PLAYING spectrum: big segmented bars drawn right after the dot grid, so
+ * cover, title, timer and progress bar all render on top of it. No real FFT
+ * is available from mpg123 -R, so levels are synthesized (bass-heavy envelope,
+ * beat pulse, per-bar wobble) and smoothed with fast attack / gravity decay,
+ * plus falling peak caps. Paused/stopped: bars sink to a low idle breathe. */
+#define SPEC_BARS 46
+#define SPEC_SEG_PITCH 4
+#define SPEC_SEG_H 3
+
+static void draw_spectrum_bg(AudioState state, int x, int base_y, int w, int max_h)
+{
+    static float level[SPEC_BARS];
+    static float peak[SPEC_BARS];
+    static float peak_vel[SPEC_BARS];
+    static Uint32 last_tick = 0;
+    static int inited = 0;
+    Uint32 now = SDL_GetTicks();
+    float t = (float)now / 1000.0f;
+    float dt = inited ? (float)(now - last_tick) / 1000.0f : 0.033f;
+    int playing = state == AUDIO_PLAYING;
+    int step = w / SPEC_BARS;
+    int bw = step - 4;
+    int x0 = x + (w - SPEC_BARS * step + 4) / 2;
+    int max_segs = max_h / SPEC_SEG_PITCH;
+    float beat = fmodf(t, 0.48f) / 0.48f;
+    float kick = expf(-beat * 7.0f);
+    static const int low[3] = { 25, 31, 38 };
+    static const int top_base[3] = { 44, 54, 64 };
+    static const int cap_base[3] = { 70, 82, 94 };
+    static const int bg[3] = { 18, 22, 27 };
+    int top[3];
+    int cap[3];
+    int i;
+
+    if (dt < 0.0f) {
+        dt = 0.0f;
+    }
+    if (dt > 0.1f) {
+        dt = 0.1f;
+    }
+    last_tick = now;
+
+    for (i = 0; i < 3; i++) {
+        top[i] = mix_ch(top_base[i], tint_rgb[i] / 4, 0.4f);
+        cap[i] = mix_ch(cap_base[i], tint_rgb[i] / 2, 0.5f);
+    }
+
+    for (i = 0; i < SPEC_BARS; i++) {
+        float fi = (float)i / (float)(SPEC_BARS - 1);
+        float target;
+        float edge;
+        int segs;
+        int peak_seg;
+        int bx = x0 + i * step;
+        int s;
+
+        if (playing) {
+            float env = 0.92f - 0.5f * fi + 0.18f * sinf(fi * 3.14159f);
+            float n = 0.5f
+                + 0.24f * sinf(t * (3.1f + (float)i * 0.37f) + (float)i * 1.7f)
+                + 0.16f * sinf(t * (7.3f + (float)(i % 7) * 0.9f) + (float)i * 0.6f)
+                + 0.10f * sinf(t * 13.0f + (float)i * 2.3f);
+            float lowness = 1.0f - fi;
+            target = env * (0.2f + 0.62f * n) + 0.42f * kick * lowness * lowness;
+        } else {
+            target = 0.04f + 0.025f * sinf(t * 1.6f + (float)i * 0.45f);
+        }
+        if (target < 0.0f) {
+            target = 0.0f;
+        }
+        if (target > 1.0f) {
+            target = 1.0f;
+        }
+
+        if (!inited) {
+            level[i] = target;
+            peak[i] = target + 0.08f;
+            peak_vel[i] = 0.0f;
+        } else if (target > level[i]) {
+            float k = dt * 18.0f;
+            level[i] += (target - level[i]) * (k > 1.0f ? 1.0f : k);
+        } else {
+            float fall = dt * 1.4f;
+            level[i] -= (level[i] - target) < fall ? (level[i] - target) : fall;
+        }
+
+        if (level[i] >= peak[i]) {
+            peak[i] = level[i];
+            peak_vel[i] = 0.0f;
+        } else {
+            peak_vel[i] += dt * 2.2f;
+            peak[i] -= peak_vel[i] * dt;
+            if (peak[i] < level[i]) {
+                peak[i] = level[i];
+            }
+        }
+
+        /* Soft horizontal vignette so the field melts into the shell. */
+        edge = (float)(i < SPEC_BARS - 1 - i ? i : SPEC_BARS - 1 - i) / 6.0f;
+        if (edge > 1.0f) {
+            edge = 1.0f;
+        }
+        edge = 0.3f + 0.7f * edge;
+
+        segs = (int)(level[i] * (float)max_segs + 0.5f);
+        if (segs < 1) {
+            segs = 1;
+        }
+        for (s = 0; s < segs; s++) {
+            float fr = (float)s / (float)max_segs;
+            int r = mix_ch(bg[0], mix_ch(low[0], top[0], fr), edge);
+            int g = mix_ch(bg[1], mix_ch(low[1], top[1], fr), edge);
+            int b = mix_ch(bg[2], mix_ch(low[2], top[2], fr), edge);
+            fill_rect(bx, base_y - (s + 1) * SPEC_SEG_PITCH, bw, SPEC_SEG_H, rgb((Uint8)r, (Uint8)g, (Uint8)b));
+        }
+
+        peak_seg = (int)(peak[i] * (float)max_segs + 0.5f);
+        if (peak_seg <= segs) {
+            peak_seg = segs + 1;
+        }
+        if (peak_seg <= max_segs + 1) {
+            int r = mix_ch(bg[0], cap[0], edge);
+            int g = mix_ch(bg[1], cap[1], edge);
+            int b = mix_ch(bg[2], cap[2], edge);
+            fill_rect(bx, base_y - peak_seg * SPEC_SEG_PITCH + 1, bw, 2, rgb((Uint8)r, (Uint8)g, (Uint8)b));
+        }
+    }
+    inited = 1;
 }
 
 /* Single diagonal gradient dot matrix for the now-playing background: dots
@@ -620,30 +771,10 @@ static void format_time_pair(int elapsed_seconds, int duration_seconds, char *ou
     snprintf(out, out_size, "%02d:%02d / %02d:%02d", elapsed_minutes, elapsed_seconds, duration_minutes, duration_seconds);
 }
 
-/* Rounded-rect containment test matching fill_round_rect geometry (horizontal
- * strip + vertical strip + 4 corner arcs). Used to mask the square cover so it
- * respects the container's rounded interior corners. */
-static int inside_cover_round(int i, int j, int dst, int r)
-{
-    int cx, cy, dx, dy;
-
-    if (i >= r && i < dst - r) {
-        return 1;
-    }
-    if (j >= r && j < dst - r) {
-        return 1;
-    }
-    cx = (i < r) ? r : (dst - 1 - r);
-    cy = (j < r) ? r : (dst - 1 - r);
-    dx = i - cx;
-    dy = j - cy;
-    return dx * dx + dy * dy <= r * r;
-}
-
 /* Bilinear-scale an RGBA cover into a fitted (letterboxed) RGB565 buffer of
- * dst x dst, masked to the rounded interior (radius r). Returns malloc'd buffer
+ * dst x dst (corners are masked at blit time). Returns malloc'd buffer
  * (dst*dst*2) or NULL. Runs once per track change, not per frame. */
-static unsigned char *scale_cover_565(const unsigned char *rgba, int sw, int sh, int dst, int radius)
+static unsigned char *scale_cover_565(const unsigned char *rgba, int sw, int sh, int dst)
 {
     unsigned char *out;
     int dw, dh, ox, oy, i, j;
@@ -703,8 +834,7 @@ static unsigned char *scale_cover_565(const unsigned char *rgba, int sw, int sh,
             int px = i - ox;
             int py = j - oy;
             Uint16 px565;
-            if (px < 0 || px >= dw || py < 0 || py >= dh ||
-                !inside_cover_round(i, j, dst, radius)) {
+            if (px < 0 || px >= dw || py < 0 || py >= dh) {
                 px565 = bg565;
             } else {
                 const unsigned char *p00 = rgba + ((size_t)y0t[py] * sw + x0t[px]) * 4;
@@ -741,19 +871,234 @@ static unsigned char *scale_cover_565(const unsigned char *rgba, int sw, int sh,
     return out;
 }
 
-static void blit_cover_565(int x, int y, int dst, const unsigned char *buf)
-{
-    int row;
-    int pitch = screen->pitch;
-    Uint8 *dp = (Uint8 *)screen->pixels + y * pitch + x * 2;
+/* ---- NOW PLAYING cover: borderless rounded card with anti-aliased corners,
+ * soft drop shadow, ambient glow tinted from the cover, and a faint 1px rim.
+ * Masks are computed once; art is decoded/scaled once per track change. ---- */
+#define COVER_SIZE 160
+#define COVER_RADIUS 16
+#define HALO_PAD 36
+#define HALO_SIZE (COVER_SIZE + HALO_PAD * 2)
 
-    for (row = 0; row < dst; row++) {
-        memcpy(dp, buf + (size_t)row * dst * 2, (size_t)dst * 2);
-        dp += pitch;
+static unsigned char *cover_mask = NULL;   /* corner coverage, COVER_SIZE^2 */
+static unsigned char *cover_rim = NULL;    /* 1px edge highlight */
+static unsigned char *halo_glow = NULL;    /* HALO_SIZE^2 */
+static unsigned char *halo_shadow = NULL;
+static unsigned char *cover_art_565 = NULL;
+static unsigned char *cover_blank_565 = NULL;
+static char cover_path[1024] = "";
+
+/* Signed distance from pixel center (px, py) to a w x h rounded rect whose
+ * top-left is the origin. Negative inside. */
+static float sd_round_rect(float px, float py, float w, float h, float r)
+{
+    float qx = fabsf(px - w * 0.5f) - (w * 0.5f - r);
+    float qy = fabsf(py - h * 0.5f) - (h * 0.5f - r);
+    float ox = qx > 0.0f ? qx : 0.0f;
+    float oy = qy > 0.0f ? qy : 0.0f;
+    float inner = qx > qy ? qx : qy;
+
+    if (inner > 0.0f) {
+        inner = 0.0f;
+    }
+    return sqrtf(ox * ox + oy * oy) + inner - r;
+}
+
+static float clamp01(float v)
+{
+    return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
+}
+
+static int cover_masks_init(void)
+{
+    int i;
+    int j;
+
+    if (cover_mask) {
+        return 1;
+    }
+    cover_mask = (unsigned char *)malloc(COVER_SIZE * COVER_SIZE);
+    cover_rim = (unsigned char *)malloc(COVER_SIZE * COVER_SIZE);
+    halo_glow = (unsigned char *)malloc(HALO_SIZE * HALO_SIZE);
+    halo_shadow = (unsigned char *)malloc(HALO_SIZE * HALO_SIZE);
+    cover_blank_565 = (unsigned char *)malloc(COVER_SIZE * COVER_SIZE * 2);
+    if (!cover_mask || !cover_rim || !halo_glow || !halo_shadow || !cover_blank_565) {
+        free(cover_mask); free(cover_rim); free(halo_glow); free(halo_shadow); free(cover_blank_565);
+        cover_mask = cover_rim = halo_glow = halo_shadow = cover_blank_565 = NULL;
+        return 0;
+    }
+
+    for (j = 0; j < COVER_SIZE; j++) {
+        for (i = 0; i < COVER_SIZE; i++) {
+            float d = sd_round_rect(i + 0.5f, j + 0.5f, COVER_SIZE, COVER_SIZE, COVER_RADIUS);
+            float rim = 1.0f - fabsf(d + 1.0f);
+            float fy = (float)j / COVER_SIZE;
+            Uint16 px;
+            cover_mask[j * COVER_SIZE + i] = (unsigned char)(clamp01(0.5f - d) * 255.0f);
+            /* Rim is brighter on top, fades toward the bottom like a light edge. */
+            cover_rim[j * COVER_SIZE + i] = (unsigned char)(clamp01(rim) * (70.0f - 45.0f * fy));
+            /* No-art card: soft diagonal slate gradient. */
+            {
+                float g = clamp01(((float)i * 0.35f + (float)j) / (COVER_SIZE * 1.35f));
+                px = pack565(mix_ch(54, 20, g), mix_ch(64, 25, g), mix_ch(76, 32, g));
+            }
+            cover_blank_565[(j * COVER_SIZE + i) * 2] = (unsigned char)(px & 0xff);
+            cover_blank_565[(j * COVER_SIZE + i) * 2 + 1] = (unsigned char)(px >> 8);
+        }
+    }
+
+    for (j = 0; j < HALO_SIZE; j++) {
+        for (i = 0; i < HALO_SIZE; i++) {
+            float px = i + 0.5f - HALO_PAD;
+            float py = j + 0.5f - HALO_PAD;
+            float dg = sd_round_rect(px, py, COVER_SIZE, COVER_SIZE, COVER_RADIUS);
+            float ds = sd_round_rect(px, py - 8.0f, COVER_SIZE, COVER_SIZE, COVER_RADIUS);
+            float g = 1.0f - clamp01(dg / (float)HALO_PAD);
+            float s = 1.0f - clamp01((ds + 6.0f) / 22.0f);
+            halo_glow[j * HALO_SIZE + i] = (unsigned char)(g * g * g * 120.0f);
+            halo_shadow[j * HALO_SIZE + i] = (unsigned char)(s * s * 200.0f);
+        }
+    }
+    return 1;
+}
+
+/* Reload art only when the active track path changes; derive the glow tint
+ * from the art's average color, pushed toward a vivid, light version. */
+static void cover_sync(const char *art_path)
+{
+    unsigned char *rgba = NULL;
+    int w = 0;
+    int h = 0;
+
+    if (!art_path) {
+        art_path = "";
+    }
+    if (strcmp(cover_path, art_path) == 0) {
+        return;
+    }
+    snprintf(cover_path, sizeof(cover_path), "%s", art_path);
+    free(cover_art_565);
+    cover_art_565 = NULL;
+    tint_rgb[0] = 200;
+    tint_rgb[1] = 134;
+    tint_rgb[2] = 20;
+
+    if (art_path[0] && album_art_load(art_path, &rgba, &w, &h)) {
+        long sum[3] = { 0, 0, 0 };
+        long n = 0;
+        int sx = w > 64 ? w / 64 : 1;
+        int sy = h > 64 ? h / 64 : 1;
+        int i;
+        int j;
+        int mx;
+
+        cover_art_565 = scale_cover_565(rgba, w, h, COVER_SIZE);
+        for (j = 0; j < h; j += sy) {
+            for (i = 0; i < w; i += sx) {
+                const unsigned char *p = rgba + ((size_t)j * w + i) * 4;
+                sum[0] += p[0];
+                sum[1] += p[1];
+                sum[2] += p[2];
+                n++;
+            }
+        }
+        free(rgba);
+        if (n > 0) {
+            int avg[3];
+            int lum;
+            for (i = 0; i < 3; i++) {
+                avg[i] = (int)(sum[i] / n);
+            }
+            /* Boost saturation 1.6x around luma, then normalize brightness. */
+            lum = (avg[0] * 3 + avg[1] * 6 + avg[2]) / 10;
+            for (i = 0; i < 3; i++) {
+                int v = lum + (avg[i] - lum) * 8 / 5;
+                tint_rgb[i] = v < 0 ? 0 : (v > 255 ? 255 : v);
+            }
+            mx = tint_rgb[0] > tint_rgb[1] ? tint_rgb[0] : tint_rgb[1];
+            mx = mx > tint_rgb[2] ? mx : tint_rgb[2];
+            if (mx < 1) {
+                mx = 1;
+            }
+            for (i = 0; i < 3; i++) {
+                tint_rgb[i] = tint_rgb[i] * 225 / mx;
+            }
+        }
     }
 }
 
-static void draw_album_visual(int x, int y, int size, Uint32 muted, int spinning, const char *art_path)
+static void draw_cover_halo(int x, int y)
+{
+    int i;
+    int j;
+    int ox = x - HALO_PAD;
+    int oy = y - HALO_PAD;
+
+    if (!cover_masks_init()) {
+        return;
+    }
+    for (j = 0; j < HALO_SIZE; j++) {
+        for (i = 0; i < HALO_SIZE; i++) {
+            int g = halo_glow[j * HALO_SIZE + i];
+            int s = halo_shadow[j * HALO_SIZE + i];
+            if (g) {
+                blend_px(ox + i, oy + j, tint_rgb[0], tint_rgb[1], tint_rgb[2], g);
+            }
+            if (s) {
+                blend_px(ox + i, oy + j, 4, 6, 9, s);
+            }
+        }
+    }
+}
+
+static void blit_cover_masked(int x, int y, const unsigned char *buf)
+{
+    int i;
+    int j;
+
+    for (j = 0; j < COVER_SIZE; j++) {
+        Uint16 *row;
+        if (y + j < 0 || y + j >= screen->h) {
+            continue;
+        }
+        row = (Uint16 *)((Uint8 *)screen->pixels + (y + j) * screen->pitch);
+        if (j >= COVER_RADIUS && j < COVER_SIZE - COVER_RADIUS && x >= 0 && x + COVER_SIZE <= screen->w) {
+            memcpy(row + x, buf + (size_t)j * COVER_SIZE * 2, COVER_SIZE * 2);
+            continue;
+        }
+        for (i = 0; i < COVER_SIZE; i++) {
+            int a = cover_mask[j * COVER_SIZE + i];
+            const unsigned char *p = buf + ((size_t)j * COVER_SIZE + i) * 2;
+            Uint16 v = (Uint16)(p[0] | (p[1] << 8));
+            int r;
+            int g;
+            int b;
+            if (!a) {
+                continue;
+            }
+            r = (v >> 11) & 0x1f;
+            g = (v >> 5) & 0x3f;
+            b = v & 0x1f;
+            blend_px(x + i, y + j, (r << 3) | (r >> 2), (g << 2) | (g >> 4), (b << 3) | (b >> 2), a);
+        }
+    }
+}
+
+static void draw_cover_rim(int x, int y)
+{
+    int i;
+    int j;
+
+    for (j = 0; j < COVER_SIZE; j++) {
+        for (i = 0; i < COVER_SIZE; i++) {
+            int a = cover_rim[j * COVER_SIZE + i];
+            if (a) {
+                blend_px(x + i, y + j, 255, 255, 255, a);
+            }
+        }
+    }
+}
+
+static void draw_album_visual(int x, int y, int spinning)
 {
     static const int marker_x[32] = {
         0, 8, 16, 24, 30, 36, 39, 41,
@@ -769,22 +1114,18 @@ static void draw_album_visual(int x, int y, int size, Uint32 muted, int spinning
     };
     static int frame = 0;
     static Uint32 last_tick = 0;
-    static char cached_path[1024] = "";
-    static unsigned char *cached_rgba = NULL;
-    static unsigned char *cached_565 = NULL;
-    static int cached_w = 0;
-    static int cached_h = 0;
-    static int cached_dst = 0;
     Uint32 now = SDL_GetTicks();
-    int cx = x + size / 2;
-    int cy = y + size / 2;
-    Uint32 art_bg = rgb(12, 16, 21);
+    int cx = x + COVER_SIZE / 2;
+    int cy = y + COVER_SIZE / 2;
+    Uint32 hole = rgb(24, 29, 36);
     Uint32 accent = rgb(255, 170, 0);
     Uint32 disc = rgb(229, 236, 241);
     Uint32 ring = rgb(202, 212, 220);
     Uint32 shine = rgb(246, 249, 251);
 
-    (void)muted;
+    if (!cover_masks_init()) {
+        return;
+    }
     if (spinning) {
         if (last_tick == 0) {
             last_tick = now;
@@ -797,57 +1138,19 @@ static void draw_album_visual(int x, int y, int size, Uint32 muted, int spinning
         last_tick = now;
     }
 
-    fill_round_rect(x + 4, y + 4, size, size, 12, rgb(7, 10, 13));
-    fill_round_rect(x, y, size, size, 12, rgb(76, 88, 100));
-    fill_round_rect(x + 2, y + 2, size - 4, size - 4, 10, art_bg);
-
-    /* Album art: reload/decode only when the active track path changes.
-     * On failure keep the path cached so we don't re-read the file every frame. */
-    if (art_path && art_path[0]) {
-        if (strcmp(cached_path, art_path) != 0) {
-            if (cached_rgba) {
-                free(cached_rgba);
-                cached_rgba = NULL;
-            }
-            if (cached_565) {
-                free(cached_565);
-                cached_565 = NULL;
-            }
-            cached_w = 0;
-            cached_h = 0;
-            snprintf(cached_path, sizeof(cached_path), "%s", art_path);
-            if (album_art_load(art_path, &cached_rgba, &cached_w, &cached_h)) {
-                cached_dst = size - 4;
-                cached_565 = scale_cover_565(cached_rgba, cached_w, cached_h, cached_dst, 10);
-            }
-        }
-        if (cached_565) {
-            blit_cover_565(x + 2, y + 2, cached_dst, cached_565);
-            return;
-        }
-    } else {
-        if (cached_rgba) {
-            free(cached_rgba);
-            cached_rgba = NULL;
-        }
-        if (cached_565) {
-            free(cached_565);
-            cached_565 = NULL;
-        }
-        cached_path[0] = '\0';
-        cached_w = 0;
-        cached_h = 0;
+    blit_cover_masked(x, y, cover_art_565 ? cover_art_565 : cover_blank_565);
+    if (!cover_art_565) {
+        fill_circle(cx + 3, cy + 4, 46, rgb(14, 18, 23));
+        fill_circle(cx, cy, 46, disc);
+        fill_circle(cx, cy, 34, ring);
+        fill_circle(cx, cy, 23, disc);
+        fill_circle(cx, cy, 12, hole);
+        fill_circle(cx, cy, 5, accent);
+        fill_circle(cx + marker_x[frame] / 2, cy + marker_y[frame] / 2, 6, shine);
+        fill_circle(cx + marker_x[frame], cy + marker_y[frame], 4, hole);
+        fill_circle(cx + marker_x[frame], cy + marker_y[frame], 2, accent);
     }
-
-    fill_circle(cx + 3, cy + 3, 42, rgb(3, 6, 9));
-    fill_circle(cx, cy, 42, disc);
-    fill_circle(cx, cy, 31, ring);
-    fill_circle(cx, cy, 21, disc);
-    fill_circle(cx, cy, 12, art_bg);
-    fill_circle(cx, cy, 5, accent);
-    fill_circle(cx + marker_x[frame] / 2, cy + marker_y[frame] / 2, 6, shine);
-    fill_circle(cx + marker_x[frame], cy + marker_y[frame], 4, art_bg);
-    fill_circle(cx + marker_x[frame], cy + marker_y[frame], 2, accent);
+    draw_cover_rim(x, y);
 }
 
 static void draw_volume_bar(int x, int y, int w, int h, int volume, Uint32 fg, Uint32 muted, Uint32 hi)
@@ -1024,17 +1327,21 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
         int duration;
 
         draw_dot_grid();
+        {
+            const char *art_path = (playing >= 0 && playing < list->count)
+                ? list->tracks[playing].path : NULL;
+            cover_sync(art_path);
+        }
+        /* Spectrum first: everything else in this view draws on top of it. */
+        draw_spectrum_bg(state, 40, 360, 560, 104);
         snprintf(counter, sizeof(counter), "%03d/%03d", selected + 1, list->count);
         draw_text_right(594, 68, counter, muted, 12);
 
         duration = duration_seconds > 0 ? duration_seconds :
             (playing >= 0 && playing < list->count ? list->tracks[playing].duration_seconds : 0);
 
-        {
-            const char *art_path = (playing >= 0 && playing < list->count)
-                ? list->tracks[playing].path : NULL;
-            draw_album_visual(240, 104, 160, muted, state == AUDIO_PLAYING, art_path);
-        }
+        draw_cover_halo(240, 100);
+        draw_album_visual(240, 100, state == AUDIO_PLAYING);
         if (playing >= 0 && playing < list->count) {
             now_title = list->tracks[playing].display_name;
         } else {
@@ -1065,8 +1372,7 @@ void ui_render(const TrackList *list, int selected, int playing, AudioState stat
             format_time_pair(elapsed_seconds, duration, time_label, sizeof(time_label));
             draw_text((SCREEN_W - (int)strlen(time_label) * CHAR_W) / 2, 314, time_label, fg, 16);
         }
-        /* EQ strip & timer bar: 80% lebar layar (444px), centered — sejajar label time */
-        draw_equalizer_strip(state, 98, 344, 444);
+        /* Timer bar: 80% lebar layar (444px), centered — sejajar label time */
         draw_progress_bar(98, 348, 444, 6, elapsed_seconds, duration, rgb(60, 70, 80), hi);
     } else {
         /* TRACK LIST — full width */
