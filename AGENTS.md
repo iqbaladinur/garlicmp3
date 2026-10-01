@@ -194,7 +194,10 @@ gcc -O2 -o /tmp/preview tools/preview.c src/settings.c src/ui_sdl.c src/album_ar
 mkdir -p /out && cd /out && SDL_VIDEODRIVER=dummy /tmp/preview   # writes /out/*.bmp
 ```
 (It expects `/out/test_cover.mp3`; see `scripts/preview-ui.sh` for the
-generator.) To show the real spectrum, link `src/spectrum.c src/dr_flac_impl.c`,
+generator.) README images live in `docs/screenshots/` (`assets/GarlicMP3.png` is
+a copy of `now-playing.png`); regenerate them the same way with demo tracks
+(cover art + a synthesized FLAC so the spectrum shows real data) and compile
+with `-DGARLICMP3_GIT_HASH='"<hash>"'` so the footer is not `unknown`. To show the real spectrum, link `src/spectrum.c src/dr_flac_impl.c`,
 call `spectrum_init/set_active` + `ui_set_spectrum_source(spectrum_sample, 0)`
 and advance `ui_set_playback_ms()` across frames.
 
