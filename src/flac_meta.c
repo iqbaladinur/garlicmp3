@@ -7,6 +7,8 @@
 
 #define BLOCK_STREAMINFO 0
 #define BLOCK_VORBIS_COMMENT 4
+#define BLOCK_PICTURE 6
+#define MAX_PICTURE_BLOCK (16 * 1024 * 1024)
 #define MAX_COMMENT_BLOCK (256 * 1024)
 
 static unsigned long le32(const unsigned char *p)
@@ -33,6 +35,15 @@ static void copy_field(char *out, size_t out_size, const char *val, size_t len)
     if (out[0]) {
         return; /* keep the first occurrence */
     }
+    if (len >= out_size) {
+        len = out_size - 1;
+    }
+    memcpy(out, val, len);
+    out[len] = '\0';
+}
+
+static void copy_num(char *out, size_t out_size, const char *val, size_t len)
+{
     if (len >= out_size) {
         len = out_size - 1;
     }
@@ -68,6 +79,15 @@ static void parse_vorbis_comment(const unsigned char *b, size_t len, FlacMeta *m
             copy_field(m->title, sizeof(m->title), c + 6, clen - 6);
         } else if (clen > 7 && strncasecmp(c, "ARTIST=", 7) == 0) {
             copy_field(m->artist, sizeof(m->artist), c + 7, clen - 7);
+        } else if (clen > 22 && strncasecmp(c, "REPLAYGAIN_TRACK_GAIN=", 22) == 0) {
+            char num[32];
+            copy_num(num, sizeof(num), c + 22, clen - 22);
+            m->track_gain_db = (float)strtod(num, NULL); /* "-6.48 dB" */
+            m->has_track_gain = 1;
+        } else if (clen > 22 && strncasecmp(c, "REPLAYGAIN_TRACK_PEAK=", 22) == 0) {
+            char num[32];
+            copy_num(num, sizeof(num), c + 22, clen - 22);
+            m->track_peak = (float)strtod(num, NULL);
         }
         pos += clen;
     }
@@ -180,4 +200,114 @@ int flac_meta_duration_seconds(const FlacMeta *m)
         return 0;
     }
     return (int)((m->total_frames + (unsigned long long)m->sample_rate / 2) / (unsigned long long)m->sample_rate);
+}
+
+static unsigned long be32(const unsigned char *p)
+{
+    return ((unsigned long)p[0] << 24) | ((unsigned long)p[1] << 16) | ((unsigned long)p[2] << 8) | (unsigned long)p[3];
+}
+
+int flac_meta_parse_picture(const unsigned char *b, unsigned long len,
+                            const unsigned char **img, unsigned long *img_len, int *pic_type)
+{
+    unsigned long pos = 0;
+    unsigned long n;
+
+    if (len < 32) {
+        return 0;
+    }
+    *pic_type = (int)be32(b);
+    pos = 4;
+    n = be32(b + pos);                /* MIME */
+    if (n > len - pos - 4) {
+        return 0;
+    }
+    pos += 4 + n;
+    if (pos + 4 > len) {
+        return 0;
+    }
+    n = be32(b + pos);                /* description */
+    if (n > len - pos - 4) {
+        return 0;
+    }
+    pos += 4 + n;
+    if (pos + 20 > len) {             /* width, height, depth, colors, length */
+        return 0;
+    }
+    n = be32(b + pos + 16);
+    pos += 20;
+    if (n == 0 || n > len - pos) {
+        return 0;
+    }
+    *img = b + pos;
+    *img_len = n;
+    return 1;
+}
+
+int flac_meta_read_picture(const char *path, unsigned char **data, unsigned long *len)
+{
+    FILE *fp;
+    unsigned char h[10];
+    long pos = 0;
+    int found = 0;
+
+    *data = NULL;
+    *len = 0;
+    fp = fopen(path, "rb");
+    if (!fp) {
+        return 0;
+    }
+    if (fread(h, 1, sizeof(h), fp) == sizeof(h)) {
+        pos = (long)id3_skip(h, sizeof(h));
+    }
+    if (fseek(fp, pos, SEEK_SET) != 0 || fread(h, 1, 4, fp) != 4 || memcmp(h, "fLaC", 4) != 0) {
+        fclose(fp);
+        return 0;
+    }
+    for (;;) {
+        unsigned char bh[4];
+        int last;
+        int type;
+        size_t blen;
+
+        if (fread(bh, 1, 4, fp) != 4) {
+            break;
+        }
+        last = (bh[0] & 0x80) != 0;
+        type = bh[0] & 0x7f;
+        blen = ((size_t)bh[1] << 16) | ((size_t)bh[2] << 8) | bh[3];
+        if (type == BLOCK_PICTURE && blen <= MAX_PICTURE_BLOCK) {
+            unsigned char *body = (unsigned char *)malloc(blen ? blen : 1);
+            const unsigned char *img;
+            unsigned long img_len;
+            int pic_type = 0;
+            if (!body || fread(body, 1, blen, fp) != blen) {
+                free(body);
+                break;
+            }
+            if (flac_meta_parse_picture(body, (unsigned long)blen, &img, &img_len, &pic_type)) {
+                /* Keep the first picture, but let a front cover (3) win. */
+                if (!found || pic_type == 3) {
+                    free(*data);
+                    *data = (unsigned char *)malloc(img_len);
+                    if (*data) {
+                        memcpy(*data, img, img_len);
+                        *len = img_len;
+                        found = 1;
+                    }
+                }
+            }
+            free(body);
+            if (found && pic_type == 3) {
+                break;
+            }
+        } else if (fseek(fp, (long)blen, SEEK_CUR) != 0) {
+            break;
+        }
+        if (last) {
+            break;
+        }
+    }
+    fclose(fp);
+    return found;
 }

@@ -5,10 +5,11 @@
 
 /* Real spectrum data for the now-playing visualizer.
  *
- * Audio still plays through the mpg123 -R child process; this module decodes
- * the same MP3 a second time (minimp3) on a background thread, reduces it to
- * SPECTRUM_BANDS log-spaced band levels at SPECTRUM_FPS, and caches the result
- * on disk so every track is analyzed only once.
+ * Playback is untouched (mpg123 for MP3, out123 for FLAC); this module decodes
+ * the same file a second time (MP3: minimp3, FLAC: dr_flac) on a background
+ * thread, reduces it to SPECTRUM_BANDS log-spaced band levels at
+ * SPECTRUM_FPS, and caches the result on disk so every track is analyzed only
+ * once.
  *
  *  - On demand: the active (playing) track is analyzed first, at full speed,
  *    as soon as it starts playing. Until the analysis has caught up with the
@@ -55,8 +56,8 @@ void spectrum_analyzer_free(SpectrumAnalyzer *a);
 int spectrum_analyzer_feed(SpectrumAnalyzer *a, const short *pcm, int frames, int channels,
                            unsigned char *out, int out_rows);
 
-/* Decode + analyze an MP3 file into a malloc'd SPECTRUM_BANDS * frames buffer.
- * abort_fn (optional) is polled between MP3 frames; returning nonzero stops
+/* Decode + analyze an MP3 or FLAC file into a malloc'd SPECTRUM_BANDS * frames
+ * buffer. abort_fn (optional) is polled between decoded chunks; returning nonzero stops
  * the analysis and the function returns -1. Returns the row count, or -1. */
 int spectrum_analyze_file(const char *path, unsigned char **out_rows,
                           int (*abort_fn)(void *ctx, int rows_done), void *ctx);

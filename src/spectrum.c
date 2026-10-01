@@ -21,6 +21,8 @@
 #define MINIMP3_IMPLEMENTATION
 #define MINIMP3_ONLY_MP3
 #include "../third_party/minimp3/minimp3.h"
+#include "dr_flac_cfg.h"
+#include <strings.h>
 
 /* ------------------------------------------------------------------------
  * Analyzer: Hann-windowed 1024-point FFT every hop, power summed into
@@ -211,7 +213,7 @@ int spectrum_analyzer_feed(SpectrumAnalyzer *a, const short *pcm, int frames, in
 
 typedef int (*RowSink)(void *ctx, const unsigned char *rows, int count);
 
-static int analyze_stream(const char *path, RowSink sink, void *ctx)
+static int analyze_mp3_stream(const char *path, RowSink sink, void *ctx)
 {
     FILE *fp;
     static const int BUF = 16384;
@@ -291,6 +293,55 @@ static int analyze_stream(const char *path, RowSink sink, void *ctx)
     free(pcm);
     fclose(fp);
     return rc < 0 ? -1 : total;
+}
+
+/* FLAC: same analyzer, fed from dr_flac (s16). */
+static int analyze_flac_stream(const char *path, RowSink sink, void *ctx)
+{
+    drflac *f = drflac_open_file(path, NULL);
+    SpectrumAnalyzer *an;
+    short *pcm;
+    unsigned char rows[8 * SPECTRUM_BANDS];
+    int total = 0;
+    int rc = 0;
+
+    if (!f) {
+        return -1;
+    }
+    an = spectrum_analyzer_new((int)f->sampleRate);
+    pcm = (short *)malloc(sizeof(short) * 1152 * (size_t)(f->channels ? f->channels : 1));
+    if (!an || !pcm || f->channels < 1) {
+        spectrum_analyzer_free(an);
+        free(pcm);
+        drflac_close(f);
+        return -1;
+    }
+    for (;;) {
+        drflac_uint64 got = drflac_read_pcm_frames_s16(f, 1152, pcm);
+        int n;
+        if (got == 0) {
+            break;
+        }
+        n = spectrum_analyzer_feed(an, pcm, (int)got, (int)f->channels, rows, 8);
+        total += n;
+        if (sink && sink(ctx, rows, n)) {
+            rc = -1;
+            break;
+        }
+    }
+    spectrum_analyzer_free(an);
+    free(pcm);
+    drflac_close(f);
+    return rc < 0 ? -1 : total;
+}
+
+static int analyze_stream(const char *path, RowSink sink, void *ctx)
+{
+    const char *dot = strrchr(path, '.');
+    if (dot && strcasecmp(dot, ".flac") == 0) {
+        return analyze_flac_stream(path, sink, ctx);
+    }
+    return analyze_mp3_stream(path, sink, ctx);
 }
 
 typedef struct CollectCtx {

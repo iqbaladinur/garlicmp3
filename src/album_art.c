@@ -1,8 +1,11 @@
 #include "album_art.h"
 
+#include "flac_meta.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "../third_party/stb/stb_image.h"
@@ -119,8 +122,8 @@ static int extract_image(const unsigned char *apic, unsigned long apic_len,
     return 1;
 }
 
-int album_art_load(const char *mp3_path, unsigned char **out_rgba,
-                   int *out_w, int *out_h)
+static int load_id3_art(const char *mp3_path, unsigned char **out_rgba,
+                        int *out_w, int *out_h)
 {
     FILE *fp;
     unsigned char hdr[10];
@@ -181,4 +184,87 @@ int album_art_load(const char *mp3_path, unsigned char **out_rgba,
 
     free(tag);
     return ok;
+}
+
+static int decode_image(const unsigned char *img, unsigned long img_len,
+                        unsigned char **out_rgba, int *out_w, int *out_h)
+{
+    int w, h, n;
+    unsigned char *rgba;
+
+    if (!img || img_len == 0 || img_len > 0x7fffffffUL) {
+        return 0;
+    }
+    rgba = stbi_load_from_memory(img, (int)img_len, &w, &h, &n, 4);
+    if (!rgba || w <= 0 || h <= 0) {
+        stbi_image_free(rgba);
+        return 0;
+    }
+    *out_rgba = rgba;
+    *out_w = w;
+    *out_h = h;
+    return 1;
+}
+
+static int load_flac_art(const char *path, unsigned char **out_rgba, int *out_w, int *out_h)
+{
+    unsigned char *img = NULL;
+    unsigned long len = 0;
+    int ok = 0;
+
+    if (flac_meta_read_picture(path, &img, &len)) {
+        ok = decode_image(img, len, out_rgba, out_w, out_h);
+    }
+    free(img);
+    return ok;
+}
+
+/* Album folders (common for FLAC rips) often carry the cover as a file. */
+static int load_folder_art(const char *track_path, unsigned char **out_rgba, int *out_w, int *out_h)
+{
+    static const char *names[] = {
+        "cover.jpg", "cover.png", "folder.jpg", "folder.png",
+        "front.jpg", "front.png", "Cover.jpg", "Folder.jpg", "Front.jpg", "AlbumArt.jpg"
+    };
+    char path[1100];
+    const char *slash = strrchr(track_path, '/');
+    int dir_len = slash ? (int)(slash - track_path) : 1;
+    const char *dir = slash ? track_path : ".";
+    size_t i;
+
+    for (i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        int w, h, n;
+        unsigned char *rgba;
+        snprintf(path, sizeof(path), "%.*s/%s", dir_len, dir, names[i]);
+        rgba = stbi_load(path, &w, &h, &n, 4);
+        if (rgba && w > 0 && h > 0) {
+            *out_rgba = rgba;
+            *out_w = w;
+            *out_h = h;
+            return 1;
+        }
+        stbi_image_free(rgba);
+    }
+    return 0;
+}
+
+int album_art_load(const char *path, unsigned char **out_rgba, int *out_w, int *out_h)
+{
+    const char *dot;
+
+    if (!path || !out_rgba || !out_w || !out_h) {
+        return 0;
+    }
+    *out_rgba = NULL;
+    *out_w = 0;
+    *out_h = 0;
+    dot = strrchr(path, '.');
+    if (dot && strcasecmp(dot, ".flac") == 0) {
+        if (load_flac_art(path, out_rgba, out_w, out_h)) {
+            return 1;
+        }
+    } else if (load_id3_art(path, out_rgba, out_w, out_h)) {
+        return 1;
+    }
+    return load_folder_art(path, out_rgba, out_w, out_h);
 }

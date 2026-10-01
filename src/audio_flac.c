@@ -16,10 +16,9 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#define DR_FLAC_IMPLEMENTATION
-#define DR_FLAC_NO_OGG
-#define DR_FLAC_NO_WCHAR
-#include "../third_party/dr_libs/dr_flac.h"
+#include "dr_flac_cfg.h"
+#include "flac_dsp.h"
+#include "flac_meta.h"
 
 #ifndef F_SETPIPE_SZ
 #define F_SETPIPE_SZ 1031
@@ -53,6 +52,17 @@ static int channels = 0;
 static int bits = 0;
 static char last_error[192] = "";
 static char cur_path[1024] = "";
+
+/* Sound settings (guarded by mu); the decoder rebuilds its DSP when
+ * dsp_gen changes, so EQ/RVA changes apply mid-track. */
+static int eq_bass_t = 10;
+static int eq_mid_t = 10;
+static int eq_treble_t = 10;
+static int rva_on = 0;
+static unsigned dsp_gen = 1;
+static int track_has_rg = 0;
+static float track_rg_db = 0.0f;
+static float track_rg_peak = 0.0f;
 static int open_retries = 0;
 static int retrying = 0;
 
@@ -183,22 +193,6 @@ static int spawn_out123(int r, int ch)
 
 /* ---- decoder thread -------------------------------------------------- */
 
-static uint32_t rng_state = 0x9e3779b9u;
-
-static int32_t tpdf_noise(void)
-{
-    /* Two uniform values in [0, 65535] -> triangular in (-65536, 65536),
-     * i.e. +/- 1 LSB at 16-bit, expressed in s32 (left-justified) units. */
-    uint32_t a;
-    uint32_t b;
-    rng_state ^= rng_state << 13;
-    rng_state ^= rng_state >> 17;
-    rng_state ^= rng_state << 5;
-    a = rng_state & 0xffff;
-    b = rng_state >> 16;
-    return (int32_t)a - (int32_t)b;
-}
-
 static int write_all(int fd, const void *buf, size_t len)
 {
     const char *p = (const char *)buf;
@@ -225,18 +219,21 @@ static void *decode_main(void *arg)
 {
     DecodeJob job = *(DecodeJob *)arg;
     int16_t *pcm16;
-    int32_t *pcm32 = NULL;
+    int32_t *pcm32;
     int ch = (int)job.flac->channels;
     int deep = job.flac->bitsPerSample > 16;
+    int sr = (int)job.flac->sampleRate;
+    FlacDsp dsp;
+    unsigned seen_gen = 0;
 
     free(arg);
+    memset(&dsp, 0, sizeof(dsp));
     pcm16 = (int16_t *)malloc(sizeof(int16_t) * CHUNK_FRAMES * (size_t)ch);
-    if (deep) {
-        pcm32 = (int32_t *)malloc(sizeof(int32_t) * CHUNK_FRAMES * (size_t)ch);
-    }
+    pcm32 = (int32_t *)malloc(sizeof(int32_t) * CHUNK_FRAMES * (size_t)ch);
 
     for (;;) {
         drflac_uint64 n;
+        drflac_uint64 i;
 
         pthread_mutex_lock(&mu);
         while (paused && !stop_req) {
@@ -246,21 +243,31 @@ static void *decode_main(void *arg)
             pthread_mutex_unlock(&mu);
             break;
         }
+        if (seen_gen != dsp_gen) {
+            seen_gen = dsp_gen;
+            flac_dsp_setup(&dsp, sr, eq_bass_t, eq_mid_t, eq_treble_t,
+                           rva_on && track_has_rg ? track_rg_db : 0.0f, track_rg_peak);
+        }
         pthread_mutex_unlock(&mu);
 
-        if (!pcm16 || (deep && !pcm32)) {
+        if (!pcm16 || !pcm32) {
             n = 0;
-        } else if (deep) {
-            drflac_uint64 i;
+        } else if (flac_dsp_is_bypass(&dsp) && !deep) {
+            /* 16-bit source, flat EQ, no gain: samples pass through bit-exact. */
+            n = drflac_read_pcm_frames_s16(job.flac, CHUNK_FRAMES, pcm16);
+        } else {
+            /* Work at 24-bit scale, then TPDF-dither to 16-bit. */
             n = drflac_read_pcm_frames_s32(job.flac, CHUNK_FRAMES, pcm32);
             for (i = 0; i < n * (drflac_uint64)ch; i++) {
-                int64_t v = (int64_t)pcm32[i] + tpdf_noise() + 0x8000;
-                v >>= 16;
-                pcm16[i] = (int16_t)(v > 32767 ? 32767 : (v < -32768 ? -32768 : v));
+                pcm32[i] >>= 8;
             }
-        } else {
-            /* 16-bit (or less) sources: samples pass through bit-exact. */
-            n = drflac_read_pcm_frames_s16(job.flac, CHUNK_FRAMES, pcm16);
+            if (flac_dsp_is_bypass(&dsp)) {
+                for (i = 0; i < n * (drflac_uint64)ch; i++) {
+                    pcm16[i] = flac_dsp_dither16(&dsp, pcm32[i]);
+                }
+            } else {
+                flac_dsp_process(&dsp, pcm32, pcm16, (int)n, ch);
+            }
         }
 
         if (n == 0) {
@@ -387,6 +394,17 @@ int flac_play(const char *path, int start_seconds)
     job->flac = f;
     job->fd = out_fd;
 
+    {
+        FlacMeta meta;
+        int has = flac_meta_read(path, &meta) && meta.has_track_gain;
+        pthread_mutex_lock(&mu);
+        track_has_rg = has;
+        track_rg_db = has ? meta.track_gain_db : 0.0f;
+        track_rg_peak = has ? meta.track_peak : 0.0f;
+        dsp_gen++; /* fresh DSP state for the new track */
+        pthread_mutex_unlock(&mu);
+    }
+
     pthread_mutex_lock(&mu);
     active = 1;
     paused = 0;
@@ -407,8 +425,17 @@ int flac_play(const char *path, int start_seconds)
     if (!retrying) {
         open_retries = 0;
     }
-    printf("flac: play %s %d-bit/%d Hz/%dch%s%s start=%d\n", path, bits, rate, channels,
-           bits > 16 ? " (TPDF dither to 16-bit)" : " (bit-exact)", reuse ? " gapless" : "", start_seconds);
+    {
+        int eq_flat;
+        int rg;
+        pthread_mutex_lock(&mu);
+        eq_flat = eq_bass_t == 10 && eq_mid_t == 10 && eq_treble_t == 10;
+        rg = rva_on && track_has_rg;
+        pthread_mutex_unlock(&mu);
+        printf("flac: play %s %d-bit/%d Hz/%dch%s%s%s%s start=%d\n", path, bits, rate, channels,
+               (bits > 16 || !eq_flat || rg) ? " (TPDF dither to 16-bit)" : " (bit-exact)",
+               eq_flat ? "" : " eq", rg ? " replaygain" : "", reuse ? " gapless" : "", start_seconds);
+    }
 
     if (pthread_create(&thread, NULL, decode_main, job) != 0) {
         free(job);
@@ -533,6 +560,24 @@ int flac_take_finished(void)
     }
     pthread_mutex_unlock(&mu);
     return f;
+}
+
+void flac_set_eq(int bass_tenths, int mid_tenths, int treble_tenths)
+{
+    pthread_mutex_lock(&mu);
+    eq_bass_t = bass_tenths;
+    eq_mid_t = mid_tenths;
+    eq_treble_t = treble_tenths;
+    dsp_gen++;
+    pthread_mutex_unlock(&mu);
+}
+
+void flac_set_rva(int on)
+{
+    pthread_mutex_lock(&mu);
+    rva_on = on ? 1 : 0;
+    dsp_gen++;
+    pthread_mutex_unlock(&mu);
 }
 
 const char *flac_last_error(void)

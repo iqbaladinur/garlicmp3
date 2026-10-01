@@ -9,11 +9,16 @@ Minimal MP3 + FLAC player for the original Anbernic RG35XX / RG35XX OG running G
 - MP3 playback through a single persistent `mpg123 -R` remote-control process: gapless track changes, clean pause/resume, accurate elapsed/duration (VBR included) and precise resume.
 - 3-band equalizer (bass/mid/treble) with presets (Flat, Bass Boost, Bass+Treble, Vocal, Rock, Custom), ReplayGain (`RVA mix`) normalization toggle, and automatic anti-clipping headroom.
 - Separate Settings screen on Select+A: Up/Down selects, Left/Right adjusts, B closes; changes apply live and persist in `state.cfg`.
-- FLAC playback on a separate path from MP3 (dr_flac decoder + `out123`): 16-bit
-  files reach the output bit-exact, 24-bit files are reduced to 16-bit with TPDF
-  dither, and consecutive tracks with the same format play gapless. MP3 playback
-  is untouched and keeps working even if the FLAC path fails. The list shows
+- FLAC playback on a separate path from MP3 (dr_flac decoder + `out123`): with
+  EQ Flat and RVA off, 16-bit files reach the output bit-exact; EQ, ReplayGain
+  or 24-bit sources go through a fixed-point stage and are TPDF-dithered to
+  16-bit. Consecutive tracks with the same format play gapless. MP3 playback is
+  untouched and keeps working even if the FLAC path fails. The list shows
   lossless tracks as bit depth / kHz (e.g. `16/44`, `24/96`).
+- FLAC gets the same 3-band EQ split and anti-clip headroom as MP3, ReplayGain
+  from `REPLAYGAIN_TRACK_GAIN`/`PEAK` (RVA setting), embedded cover art, and the
+  music-driven spectrum. Tracks without embedded art (MP3 or FLAC) fall back to
+  `cover.jpg` / `folder.jpg` / `front.jpg` (or `.png`) next to the file.
 - Music scan from `Roms/MUSIC` (SD2), `Roms/APPS/GarlicMP3/MUSIC`, or `/mnt/mmc/MUSIC`.
 - Folder-sorted library with one-level subdirectory scanning.
 - ID3v2/ID3v1 title and artist display, with cleaned filename fallback.
@@ -167,8 +172,9 @@ priority after the first run.
 - **FLAC shows "out123 not found" / "audio output stopped"**: copy `out123` next to
   `mpg123` in the app folder; "audio output stopped" means out123 could not open
   or lost the audio device (see `garlic-mp3.log`). MP3 playback is unaffected.
-- **FLAC limits (for now)**: mono/stereo only; EQ, ReplayGain, cover art and the
-  music-driven spectrum apply to MP3 only (FLAC shows the animated spectrum).
+- **FLAC limits**: mono/stereo only. Output is 16-bit; for a bit-exact 16-bit
+  path keep EQ on Flat and RVA off (the log shows `bit-exact` or `TPDF dither`
+  for each track).
 - **Track names look wrong**: the app uses ID3v2/ID3v1 title and artist when available; otherwise it cleans up the filename.
 - **Volume does not change**: the app writes `/sys/class/volume/value`; check `garlic-mp3.log` for `volume=` output.
 - **Spectrum bars look synthetic / not following the music**: the track is still

@@ -987,8 +987,8 @@ static int handle_settings_action(InputAction action, Settings *settings, int *s
     case ACTION_PREV:
     case ACTION_NEXT:
         if (settings_adjust(settings, action == ACTION_NEXT ? 1 : -1)) {
-            audio_set_eq(settings->bass_t, settings->mid_t, settings->treble_t);
-            audio_set_rva(settings->rva);
+            player_set_eq(settings->bass_t, settings->mid_t, settings->treble_t);
+            player_set_rva(settings->rva);
             audio_set_volume_step(settings->volume_step);
             *repeat_mode = settings->repeat_mode;
             *favorites_only = settings->favorites_only;
@@ -1147,8 +1147,8 @@ int main(int argc, char **argv)
     if (audio_init() != 0) {
         snprintf(message, sizeof(message), "%s", audio_last_error());
     }
-    audio_set_eq(settings.bass_t, settings.mid_t, settings.treble_t);
-    audio_set_rva(settings.rva);
+    player_set_eq(settings.bass_t, settings.mid_t, settings.treble_t);
+    player_set_rva(settings.rva);
 
     scan_music(&list, argv && argv[0] ? argv[0] : NULL);
     load_favorites(favorites_path, &list);
@@ -1165,14 +1165,10 @@ int main(int argc, char **argv)
             int i;
             spectrum_set_background(config.spectrum_background);
             if (paths) {
-                int n = 0;
-                /* Spectrum analysis decodes MP3 only (for now). */
                 for (i = 0; i < list.count; i++) {
-                    if (!flac_is_path(list.tracks[i].path)) {
-                        paths[n++] = list.tracks[i].path;
-                    }
+                    paths[i] = list.tracks[i].path;
                 }
-                spectrum_set_library(paths, n);
+                spectrum_set_library(paths, list.count);
                 free(paths);
             }
             ui_set_spectrum_source(spectrum_sample, config.spectrum_latency_ms);
@@ -1246,8 +1242,7 @@ int main(int argc, char **argv)
         if (player_state() == AUDIO_STOPPED) {
             playing = -1;
         }
-        spectrum_set_active(playing >= 0 && playing < list.count && !flac_is_path(list.tracks[playing].path)
-                            ? list.tracks[playing].path : NULL);
+        spectrum_set_active(playing >= 0 && playing < list.count ? list.tracks[playing].path : NULL);
 
         if (debug && SDL_GetTicks() - last_log > 10000) {
             printf("Heartbeat selected=%d tracks=%d state=%d\n", selected, list.count, player_state());
@@ -1269,6 +1264,9 @@ int main(int argc, char **argv)
         } else if (screen == SCREEN_HELP) {
             ui_render_help(player_state());
         } else {
+            ui_set_spectrum_source(spectrum_sample,
+                                   playing >= 0 && playing < list.count && flac_is_path(list.tracks[playing].path)
+                                   ? 0 : config.spectrum_latency_ms);
             ui_set_playback_ms(player_elapsed_ms());
             ui_render(&list, selected, playing, player_state(), player_elapsed_seconds(), player_duration_seconds(), audio_get_volume(), repeat_label(repeat_mode), settings_preset_name(settings.preset), favorites_only, message, view_mode);
         }

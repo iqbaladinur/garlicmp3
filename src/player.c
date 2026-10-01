@@ -95,6 +95,18 @@ const char *player_last_error(void)
     return current == BACKEND_FLAC ? flac_last_error() : audio_last_error();
 }
 
+void player_set_eq(int bass_tenths, int mid_tenths, int treble_tenths)
+{
+    audio_set_eq(bass_tenths, mid_tenths, treble_tenths);
+    flac_set_eq(bass_tenths, mid_tenths, treble_tenths);
+}
+
+void player_set_rva(int on)
+{
+    audio_set_rva(on);
+    flac_set_rva(on);
+}
+
 void player_shutdown(void)
 {
     flac_shutdown();

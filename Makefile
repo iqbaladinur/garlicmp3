@@ -27,7 +27,9 @@ SRCS := \
 	src/main.c \
 	src/audio_mpg123.c \
 	src/audio_flac.c \
+	src/flac_dsp.c \
 	src/flac_meta.c \
+	src/dr_flac_impl.c \
 	src/player.c \
 	src/file_scan.c \
 	src/input.c \
@@ -98,9 +100,9 @@ test-host:
 	./build/test_audio
 	$(HOST_CC) $(HOST_CFLAGS) -o build/test_font tests/test_font_lookup.c src/font_cjk.c src/font_cjk_tables.c
 	./build/test_font
-	$(HOST_CC) $(HOST_CFLAGS) -o build/test_spectrum tests/test_spectrum.c src/spectrum.c -lpthread -lm
+	$(HOST_CC) $(HOST_CFLAGS) -o build/test_spectrum tests/test_spectrum.c src/spectrum.c src/dr_flac_impl.c -lpthread -lm
 	./build/test_spectrum
-	$(HOST_CC) $(HOST_CFLAGS) -o build/test_flac tests/test_flac.c src/flac_meta.c
+	$(HOST_CC) $(HOST_CFLAGS) -o build/test_flac tests/test_flac.c src/flac_meta.c src/flac_dsp.c src/audio_mpg123.c -lm
 	./build/test_flac
 
 .PHONY: test-integration
