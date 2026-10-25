@@ -246,3 +246,18 @@ Runtime log is written to:
 ```text
 Roms/APPS/GarlicMP3/garlic-mp3.log
 ```
+
+## License
+
+MIT — see [LICENSE](LICENSE). Copyright (c) 2026 Iqbal Adi Nur.
+
+Third-party components keep their own licenses:
+
+- `third_party/dr_libs` (dr_flac) — public domain / MIT-0 (dual)
+- `third_party/stb` (stb_image) — public domain / MIT (dual)
+- `third_party/minimp3` — CC0 1.0
+- `mpg123` / `out123` — LGPL-2.1. Not bundled in this repository and not linked:
+  the player runs the `mpg123` binary shipped with GarlicOS as a separate
+  process, so the LGPL does not extend to this code.
+- SDL 1.2 — LGPL-2.1, dynamically linked against the GarlicOS
+  `libSDL-1.2.so.0.11.4` at runtime (not redistributed here).
