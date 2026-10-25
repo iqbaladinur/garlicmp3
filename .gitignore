@@ -5,3 +5,5 @@
 /ref/
 /backup-device-*/
 *.log
+/GarlicMP3-v*.zip
+/GarlicMP3-v*.zip.sha256
